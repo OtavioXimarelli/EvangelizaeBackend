@@ -2,122 +2,234 @@ package org.evangelizae.api.liturgy.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 
-import org.evangelizae.api.config.AppProperties;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.Celebration;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.CelebrationType;
 import org.evangelizae.api.liturgy.model.LiturgicalColor;
-import org.evangelizae.api.liturgy.model.LiturgyGroup;
-import org.evangelizae.api.liturgy.model.LiturgyPrayers;
-import org.evangelizae.api.liturgy.model.LiturgyReading;
-import org.evangelizae.api.liturgy.model.LiturgySource;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.LiturgicalDay;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.LiturgicalSeason;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.Parts;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.Period;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.Reading;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.ReadingType;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.Source;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.SourceName;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.SourceRole;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.Validation;
+import org.evangelizae.api.liturgy.model.LiturgyImportRequest.ValidationStatus;
+import org.evangelizae.api.liturgy.model.LiturgyImportResponse;
 import org.evangelizae.api.liturgy.model.ReadingKind;
-import org.evangelizae.api.liturgy.provider.LiturgyProvider;
-import org.evangelizae.api.liturgy.provider.ProviderLiturgy;
-import org.evangelizae.api.liturgy.provider.ProviderUnavailableException;
+import org.evangelizae.api.liturgy.repository.LiturgicalDayDocument;
+import org.evangelizae.api.liturgy.repository.LiturgicalDayRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+@ExtendWith(MockitoExtension.class)
 class LiturgyServiceTest {
 
-    private static final Instant NOW = Instant.parse("2026-08-24T14:00:00Z");
-    private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
+    private static final Instant NOW = Instant.parse("2026-09-24T02:00:00Z");
+    private static final String CONTENT_HASH = "sha256:" + "a".repeat(64);
+
+    @Mock
+    private LiturgicalDayRepository repository;
 
     @Test
-    void returnsValidatedLiveLiturgy() {
-        var service = service((date, locale) -> validLiturgy(date));
+    void returnsGroupedLiturgyForTheObserverDate() {
+        var document = document(
+                LocalDate.parse("2026-09-23"),
+                List.of(
+                        persistedReading("FIRST_READING", "Primeira leitura"),
+                        persistedReading("PSALM", "Salmo"),
+                        persistedReading("SECOND_READING", "Segunda leitura"),
+                        persistedReading("GOSPEL", "Evangelho"),
+                        persistedReading("EXTRA", "Acclamação")
+                ),
+                Instant.parse("2026-09-24T01:30:00Z")
+        );
+        when(repository.findByDate(LocalDate.parse("2026-09-23"))).thenReturn(Optional.of(document));
 
-        var response = service.getToday("America/Sao_Paulo", "pt-BR");
+        var result = service().getToday("America/Sao_Paulo", "pt-BR");
 
-        assertThat(response.date().toString()).isEqualTo("2026-08-24");
-        assertThat(response.source().provider()).isEqualTo("test-provider");
-        assertThat(response.source().freshness()).isEqualTo(LiturgySource.Freshness.LIVE);
+        assertThat(result.date()).isEqualTo(LocalDate.parse("2026-09-23"));
+        assertThat(result.groups()).extracting("kind").containsExactly(
+                ReadingKind.FIRST_READING,
+                ReadingKind.PSALM,
+                ReadingKind.SECOND_READING,
+                ReadingKind.GOSPEL,
+                ReadingKind.EXTRA
+        );
+        assertThat(result.source().provider()).isEqualTo("CNBB");
+        assertThat(result.source().fetchedAt()).isEqualTo(Instant.parse("2026-09-24T01:30:00Z"));
     }
 
     @Test
-    void usesOnlyTheSameDateCacheWhenProviderFails() {
-        var provider = new SwitchingProvider();
-        var service = service(provider);
-        service.getToday("America/Sao_Paulo", "pt-BR");
-        provider.fail = true;
+    void importsAndCreatesADateKeyedDocument() {
+        var day = validDay(LocalDate.parse("2026-09-24"));
+        when(repository.findByDate(day.date())).thenReturn(Optional.empty());
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        var response = service.getToday("America/Sao_Paulo", "pt-BR");
+        var response = service().importBatch(request(day));
 
-        assertThat(response.source().freshness()).isEqualTo(LiturgySource.Freshness.CACHED);
-        assertThat(response.date().toString()).isEqualTo("2026-08-24");
+        assertThat(response.status()).isEqualTo(LiturgyImportResponse.Status.SUCCESS);
+        assertThat(response.received()).isEqualTo(1);
+        assertThat(response.created()).isEqualTo(1);
+        assertThat(response.updated()).isZero();
+        var captor = ArgumentCaptor.forClass(LiturgicalDayDocument.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().id()).isEqualTo("2026-09-24");
+        assertThat(captor.getValue().provider()).isEqualTo("CNBB");
+        assertThat(captor.getValue().primaryContentHash()).isEqualTo(CONTENT_HASH);
+        assertThat(captor.getValue().readings()).extracting(LiturgicalDayDocument.Reading::kind)
+                .containsExactly(ReadingKind.FIRST_READING.name(), ReadingKind.GOSPEL.name());
     }
 
     @Test
-    void rejectsWrongDateProviderContentInsteadOfPresentingItAsToday() {
-        var service = service((date, locale) -> validLiturgy(date.minusDays(1)));
+    void importsAlternativeReadingsAsExtraItems() {
+        var day = validDay(LocalDate.parse("2026-09-24"), List.of(
+                new Reading(ReadingType.FIRST_READING, "Jo 11,19-27 ou Lc 10,38-42", "Primeira leitura",
+                        null, null, List.of(
+                        new Reading(ReadingType.FIRST_READING, "Jo 11,19-27", null, null, "Texto de Jo 11", null),
+                        new Reading(ReadingType.FIRST_READING, "Lc 10,38-42", null, null, "Texto de Lc 10", null)
+                ))
+        ));
+        when(repository.findByDate(day.date())).thenReturn(Optional.empty());
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThatThrownBy(() -> service.getToday("America/Sao_Paulo", "pt-BR"))
+        service().importBatch(request(day));
+
+        var captor = ArgumentCaptor.forClass(LiturgicalDayDocument.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().readings()).extracting(LiturgicalDayDocument.Reading::kind)
+                .containsExactly(ReadingKind.EXTRA.name(), ReadingKind.EXTRA.name());
+    }
+
+    @Test
+    void rejectsDuplicateDatesBeforeWriting() {
+        var day = validDay(LocalDate.parse("2026-09-24"));
+
+        assertThatThrownBy(() -> service().importBatch(request(day, day)))
+                .isInstanceOf(InvalidLiturgyImportException.class)
+                .hasMessageContaining("Duplicate liturgy date");
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void rejectsInvalidContentHashesBeforeWriting() {
+        var day = new LiturgicalDay(
+                LocalDate.parse("2026-09-24"),
+                new Celebration("Quarta-feira", CelebrationType.WEEKDAY, LiturgicalColor.GREEN),
+                new LiturgicalSeason("Tempo Comum", 25, "A"),
+                new Parts(List.of(
+                        new Reading(ReadingType.GOSPEL, "Mt 11,11-15", "Evangelho", null, "Texto", null))),
+                List.of(new Source(SourceName.CNBB, SourceRole.PRIMARY, null, NOW, null, "invalid")),
+                new Validation(ValidationStatus.VALID, 1, List.of()),
+                null
+        );
+
+        assertThatThrownBy(() -> service().importBatch(request(day)))
+                .isInstanceOf(InvalidLiturgyImportException.class)
+                .hasMessageContaining("contentHash is invalid");
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void returnsUnavailableWhenTheDocumentDoesNotExist() {
+        when(repository.findByDate(LocalDate.parse("2026-09-23"))).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service().getToday("America/Sao_Paulo", "pt-BR"))
                 .isInstanceOf(LiturgyUnavailableException.class);
     }
 
     @Test
-    void rejectsUnsupportedLocale() {
-        var service = service((date, locale) -> validLiturgy(date));
-
-        assertThatThrownBy(() -> service.getToday("America/Sao_Paulo", "en-US"))
+    void rejectsUnsupportedLocales() {
+        assertThatThrownBy(() -> service().getToday("America/Sao_Paulo", "en-US"))
                 .isInstanceOf(InvalidLiturgyRequestException.class)
                 .hasMessage("locale must be pt-BR");
     }
 
-    private LiturgyService service(LiturgyProvider provider) {
-        var providerProperties = new AppProperties.Liturgy.Provider(
-                true,
-                "https://provider.example/liturgy",
-                "test-provider",
-                java.time.Duration.ofSeconds(1),
-                java.time.Duration.ofSeconds(1)
-        );
-        var properties = new AppProperties(
-                new AppProperties.Cors(List.of("http://localhost:3000")),
-                new AppProperties.Data("mongodb://localhost:27017/evangelizae-test", "redis://localhost:6379"),
-                new AppProperties.Liturgy(
-                        providerProperties,
-                        new AppProperties.Liturgy.Import("test-import-token-with-at-least-32-chars-1234567890")),
-                new AppProperties.RateLimit(
-                        "test-rate-limit-secret-with-at-least-32-chars-12345678",
-                        false,
-                        new AppProperties.RateLimit.Policy(30, 1, java.time.Duration.ofSeconds(1)),
-                        new AppProperties.RateLimit.Policy(5, 1, java.time.Duration.ofMinutes(1))),
-                new AppProperties.Server("framework")
-        );
-        return new LiturgyService(provider, CLOCK, properties);
+    private LiturgyService service() {
+        return new LiturgyService(repository, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
-    private ProviderLiturgy validLiturgy(java.time.LocalDate date) {
-        return new ProviderLiturgy(
+    private static LiturgyImportRequest request(LiturgicalDay... days) {
+        var date = days[0].date();
+        return new LiturgyImportRequest(
+                "1.0",
+                "0.1.0",
+                NOW,
+                new Period(date, date),
+                List.of(days)
+        );
+    }
+
+    private static LiturgicalDay validDay(LocalDate date) {
+        return validDay(date, List.of(
+                new Reading(ReadingType.FIRST_READING, "1Cor 2,10b-16", "Primeira leitura", null, "Texto", null),
+                new Reading(ReadingType.GOSPEL, "Lc 4,31-37", "Evangelho", null, "Texto do Evangelho", null)
+        ));
+    }
+
+    private static LiturgicalDay validDay(LocalDate date, List<Reading> readings) {
+        return new LiturgicalDay(
                 date,
-                "Segunda-feira da 21a semana do Tempo Comum",
-                LiturgicalColor.GREEN,
-                new LiturgyPrayers(null, null, null),
-                List.of(new LiturgyGroup(
-                        ReadingKind.GOSPEL,
-                        List.of(new LiturgyReading(
-                                "Proclamacao do Evangelho",
-                                "Mt 23,13-22",
-                                "Texto fornecido apenas pelo fixture de teste.",
-                                null
-                        ))
-                ))
+                new Celebration("Quarta-feira", CelebrationType.WEEKDAY, LiturgicalColor.GREEN),
+                new LiturgicalSeason("Tempo Comum", 25, "A"),
+                new Parts(readings),
+                List.of(new Source(
+                        SourceName.CNBB,
+                        SourceRole.PRIMARY,
+                        "https://cnbb.example/" + date,
+                        NOW,
+                        null,
+                        CONTENT_HASH)),
+                new Validation(ValidationStatus.VALID, 1, List.of()),
+                null
         );
     }
 
-    private final class SwitchingProvider implements LiturgyProvider {
-        private boolean fail;
+    private static LiturgicalDayDocument document(
+            LocalDate date,
+            List<LiturgicalDayDocument.Reading> readings,
+            Instant fetchedAt
+    ) {
+        return new LiturgicalDayDocument(
+                date.toString(),
+                date,
+                "Quarta-feira",
+                "GREEN",
+                readings,
+                "WEEKDAY",
+                new LiturgicalDayDocument.Season("Tempo Comum", 25, "A"),
+                null,
+                List.of(),
+                new LiturgicalDayDocument.Validation("VALID", 1, List.of()),
+                "0.1.0",
+                NOW.minusSeconds(60),
+                CONTENT_HASH,
+                "CNBB",
+                fetchedAt,
+                NOW.minusSeconds(3600),
+                NOW,
+                NOW
+        );
+    }
 
-        @Override
-        public ProviderLiturgy fetch(java.time.LocalDate date, String locale) {
-            if (fail) {
-                throw new ProviderUnavailableException("provider unavailable");
-            }
-            return validLiturgy(date);
-        }
+    private static LiturgicalDayDocument.Reading persistedReading(String kind, String title) {
+        return new LiturgicalDayDocument.Reading(kind, title, kind + " reference", kind + " text", null);
     }
 }
-

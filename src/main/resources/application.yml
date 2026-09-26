@@ -3,16 +3,17 @@ spring:
     name: evangelizae-api
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/evangelizae}
-    redis:
-      url: ${REDIS_URL:redis://localhost:6379}
+      uri: ${MONGODB_URI}
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   jackson:
     default-property-inclusion: non_null
 
 server:
   port: ${PORT:8080}
   shutdown: graceful
-  forward-headers-strategy: ${APP_FORWARD_HEADERS_STRATEGY:framework}
+  forward-headers-strategy: none
 
 management:
   endpoints:
@@ -28,11 +29,6 @@ management:
   health:
     mongo:
       enabled: true
-    redis:
-      enabled: true
-  info:
-    env:
-      enabled: true
 
 info:
   app:
@@ -41,29 +37,7 @@ info:
 
 app:
   cors:
-    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000}
-  data:
-    mongodb-uri: ${MONGODB_URI:mongodb://localhost:27017/evangelizae}
-    redis-url: ${REDIS_URL:redis://localhost:6379}
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
   liturgy:
-    provider:
-      enabled: ${LITURGY_PROVIDER_ENABLED:false}
-      base-url: ${LITURGY_PROVIDER_BASE_URL:}
-      name: ${LITURGY_PROVIDER_NAME:normalized-provider}
-      connect-timeout: ${LITURGY_PROVIDER_CONNECT_TIMEOUT:3s}
-      read-timeout: ${LITURGY_PROVIDER_READ_TIMEOUT:8s}
     import-config:
-      token: ${LITURGY_IMPORT_TOKEN:replace-with-at-least-32-random-bytes-for-dev-only}
-  rate-limit:
-    key-secret: ${RATE_LIMIT_KEY_SECRET:replace-with-at-least-32-random-bytes-for-dev-only}
-    trust-forwarded-headers: ${RATE_LIMIT_TRUST_FORWARDED_HEADERS:false}
-    liturgy:
-      capacity: ${RATE_LIMIT_LITURGY_CAPACITY:30}
-      refill-tokens: ${RATE_LIMIT_LITURGY_REFILL_TOKENS:1}
-      refill-period: ${RATE_LIMIT_LITURGY_REFILL_PERIOD:1s}
-    internal-import:
-      capacity: ${RATE_LIMIT_INTERNAL_CAPACITY:5}
-      refill-tokens: ${RATE_LIMIT_INTERNAL_REFILL_TOKENS:1}
-      refill-period: ${RATE_LIMIT_INTERNAL_REFILL_PERIOD:1m}
-  server:
-    forward-headers-strategy: ${APP_FORWARD_HEADERS_STRATEGY:framework}
+      token: ${LITURGY_IMPORT_TOKEN}

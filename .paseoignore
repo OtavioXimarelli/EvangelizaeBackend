@@ -1,0 +1,28 @@
+# Build outputs & dependencies
+target/
+build/
+bin/
+dist/
+out/
+node_modules/
+vendor/
+
+# VCS & IDEs
+.git/
+.svn/
+.idea/
+.vscode/
+*.iml
+
+# Logs & Dumps
+*.log
+*.hprof
+*.pid
+*.lock
+*-lock.json
+
+# Environment & local credentials
+.env
+.env.*
+application-local.yml
+application-local.properties

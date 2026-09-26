@@ -31,11 +31,54 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ApiError'}
         '503':
-          description: O provedor e o cache da mesma data estao indisponiveis.
+          description: A liturgia do dia ainda nao foi importada.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+  /internal/v1/liturgy/import:
+    servers:
+      - url: http://localhost:8080
+    post:
+      operationId: importLiturgy
+      summary: Importa um lote da liturgia produzido pelo LiturgyScraper.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LiturgyImportRequest'}
+      responses:
+        '200':
+          description: Lote processado.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LiturgyImportResponse'}
+        '400':
+          description: JSON ou envelope invalido.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+        '401':
+          description: Bearer token ausente ou malformado.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+        '403':
+          description: Bearer token invalido.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+        '422':
+          description: Conteudo liturgico invalido.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ApiError'}
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
   schemas:
     DailyLiturgy:
       type: object
@@ -76,6 +119,112 @@ components:
             provider: {type: string}
             fetchedAt: {type: string, format: date-time}
             freshness: {type: string, enum: [LIVE, CACHED]}
+    LiturgyImportRequest:
+      type: object
+      required: [schemaVersion, scraperVersion, scrapedAt, period, days]
+      properties:
+        schemaVersion: {type: string, enum: ['1.0']}
+        scraperVersion: {type: string}
+        scrapedAt: {type: string, format: date-time}
+        period: {$ref: '#/components/schemas/ImportPeriod'}
+        days:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/ImportLiturgicalDay'}
+    ImportPeriod:
+      type: object
+      required: [from, to]
+      properties:
+        from: {type: string, format: date}
+        to: {type: string, format: date}
+    ImportLiturgicalDay:
+      type: object
+      required: [date, celebration, liturgicalSeason, parts, sources, validation]
+      properties:
+        date: {type: string, format: date}
+        celebration: {$ref: '#/components/schemas/ImportCelebration'}
+        liturgicalSeason: {$ref: '#/components/schemas/ImportLiturgicalSeason'}
+        parts: {$ref: '#/components/schemas/ImportParts'}
+        sources:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/ImportSource'}
+        validation: {$ref: '#/components/schemas/ImportValidation'}
+        note: {type: string}
+    ImportCelebration:
+      type: object
+      required: [name, type, liturgicalColor]
+      properties:
+        name: {type: string}
+        type: {type: string, enum: [WEEKDAY, SUNDAY, MEMORIAL, FEAST, SOLEMNITY]}
+        liturgicalColor: {type: string, enum: [GREEN, WHITE, RED, PURPLE, ROSE]}
+    ImportLiturgicalSeason:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        week: {type: integer, minimum: 1}
+        liturgicalYear: {type: string}
+    ImportParts:
+      type: object
+      required: [readings]
+      properties:
+        readings:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/ImportReading'}
+    ImportReading:
+      type: object
+      required: [type]
+      properties:
+        type: {type: string, enum: [FIRST_READING, SECOND_READING, PSALM, GOSPEL, ACCLAMATION, SEQUENCE]}
+        reference: {type: string}
+        title: {type: string}
+        response: {type: string}
+        text: {type: string}
+        options:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/ImportReading'}
+    ImportSource:
+      type: object
+      required: [name, role, collectedAt]
+      properties:
+        name: {type: string, enum: [CNBB, VATICAN_NEWS]}
+        role: {type: string, enum: [PRIMARY, VALIDATION]}
+        url: {type: string}
+        collectedAt: {type: string, format: date-time}
+        sourceHash: {type: string}
+        contentHash: {type: string}
+    ImportValidation:
+      type: object
+      required: [status, sourcesCompared, warnings]
+      properties:
+        status: {type: string, enum: [VALID, WARNING, REVIEW_REQUIRED]}
+        sourcesCompared: {type: integer, minimum: 0}
+        warnings:
+          type: array
+          items: {type: string}
+    LiturgyImportResponse:
+      type: object
+      required: [importId, status, received, processed, created, updated, unchanged, failed]
+      properties:
+        importId: {type: string, format: uuid}
+        status: {type: string, enum: [SUCCESS, PARTIAL]}
+        received: {type: integer}
+        processed: {type: integer}
+        created: {type: integer}
+        updated: {type: integer}
+        unchanged: {type: integer}
+        failed:
+          type: array
+          items:
+            type: object
+            required: [date, code, message]
+            properties:
+              date: {type: string, format: date}
+              code: {type: string}
+              message: {type: string}
     ApiError:
       type: object
       required: [timestamp, status, error, code, message, path]

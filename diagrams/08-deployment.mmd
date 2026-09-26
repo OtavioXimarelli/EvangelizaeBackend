@@ -7,7 +7,7 @@ graph TB
 
   subgraph Cloud["Cloud / Docker Host"]
     LB[Load Balancer<br/>Ingress + TLS]
-    BE[Backend<br/>evangelizae-api<br/>Dockerfile:1<br/>Java 21, :8080, /api/v1<br/>MongoConfig only]
+    BE[Backend<br/>evangelizae-api<br/>Dockerfile:1<br/>Java 25, :8080, /api/v1<br/>MongoConfig only]
     MG[(MongoDB<br/>Atlas / managed, Mongock<br/>ALL collections, PITR)]
     RD[(Redis<br/>rate-limit + Idempotency TTL)]
     SCR[Scraper Job<br/>liturgy-scraper<br/>LITURGY_IMPORT_URL]

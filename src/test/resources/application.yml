@@ -1,35 +1,19 @@
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   data:
     mongodb:
       uri: mongodb://localhost:27017/evangelizae-test
-    redis:
-      url: redis://localhost:6379
 
 app:
   cors:
     allowed-origins: http://localhost:3000
-  data:
-    mongodb-uri: mongodb://localhost:27017/evangelizae-test
-    redis-url: redis://localhost:6379
   liturgy:
-    provider:
-      enabled: false
-      base-url: ""
-      name: test-provider
-      connect-timeout: 100ms
-      read-timeout: 100ms
     import-config:
       token: test-import-token-with-at-least-32-chars-1234567890
-  rate-limit:
-    key-secret: test-rate-limit-secret-with-at-least-32-chars-12345678
-    trust-forwarded-headers: false
-    liturgy:
-      capacity: 30
-      refill-tokens: 1
-      refill-period: 1s
-    internal-import:
-      capacity: 5
-      refill-tokens: 1
-      refill-period: 1m
-  server:
-    forward-headers-strategy: framework
+
+management:
+  health:
+    mongo:
+      enabled: false

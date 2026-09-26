@@ -1,0 +1,17 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/evangelizae}
+
+server:
+  forward-headers-strategy: none
+
+app:
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  liturgy:
+    import-config:
+      token: ${LITURGY_IMPORT_TOKEN:local-import-token-change-me-1234567890}

@@ -9,7 +9,7 @@
 
 **Actors:** Mobile/Web Client, LiturgyScraper (Python cron) `CONTRACT_SCRAPER.md:1`, Admin/Moderator, Google OAuth, Email provider.
 
-**System:** Evangelizae API — single deployable Modular Monolith `ARCHITECTURE.md:16` (Java 21/Spring Boot 4.1 `pom.xml:10` + MongoDB + Redis) serving:
+**System:** Evangelizae API — single deployable Modular Monolith `ARCHITECTURE.md:16` (Java 25/Spring Boot 4.1 `pom.xml:10` + MongoDB + Redis) serving:
 - Public APIs (`/api/v1` `src/main/resources/application.yml:10` contract `openapi/evangelizae-v1.openapi.yml:1`) for liturgy, identity, prayer, social — all **MongoDB**.
 - Internal API (`/internal/v1/liturgy/import` `CONTRACT_SCRAPER.md:88`) for scraper ingestion (**MongoDB** `liturgical_days`).
 
@@ -203,4 +203,3 @@ Year-1 (50k MAU): all Mongo. Liturgy `365 docs/year` ~18MB; users/social dominat
 - `liturgical_days` validator strictness (`text XOR options` as JSON schema vs app-level).
 - `MongoDB` Atlas vs self-hosted — recommend Atlas PITR.
 - Feed fan-out: `Mongo` change streams + `Redis` vs async job — out of scope initially.
-

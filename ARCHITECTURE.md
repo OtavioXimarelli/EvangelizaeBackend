@@ -1,8 +1,8 @@
 # Evangelizae API — Architecture (Spine)
 
-> This document is the **spine**, not a todo list or roadmap. Every feature, PR, and technology choice is evaluated against these invariants. Sequence changes; invariants do not.
+> **Current implementation plan:** `LITURGY_INTEGRATION_PLAN.md` is the source of truth for the feature-first MVC refactor and scraper integration. This document retains broader historical design context that is not implemented yet.
 
-**Stack:** Java 21, Spring Boot 4.1.1 `pom.xml:10`, Maven, **MongoDB (all domains)** + Redis (rate-limit/cache), Docker `Dockerfile:1`
+**Stack:** Java 25, Spring Boot 4.1.1 `pom.xml:10`, Maven, **MongoDB**, Docker `Dockerfile:1`
 **Entry:** `src/main/java/org/evangelizae/api/EvangelizaeApiApplication.java:8`, config `src/main/java/org/evangelizae/api/config/AppProperties.java:8` / `src/main/resources/application.yml:31`
 **Public contract:** `openapi/evangelizae-v1.openapi.yml:1`
 
@@ -22,13 +22,13 @@
 
 ## 2. Style Decision
 
-**Modular Monolith + Hexagonal (Ports & Adapters) + Package-by-Feature**
+**Modular Monolith + Feature-first MVC (Controller-Service-Repository)**
 
-*Why:* Single deployable `Dockerfile:8`, single DB `MongoDB`, low ops cost. Hexagonal isolates domain from `Spring MVC`, `Spring Data MongoDB`, `JWT`, `Google SDK`, `Redis`. No `JPA/PostgreSQL` — one persistence paradigm.
+*Why:* Single deployable `Dockerfile:8`, single DB `MongoDB`, and low operational complexity. MVC keeps the initial backend understandable while preserving explicit feature ownership. No `JPA/PostgreSQL` — one persistence paradigm.
 
 *Rejected for now:* Microservices, event-driven everywhere, CQRS per module, generic repository abstraction, abstract factories, hybrid `PostgreSQL + MongoDB` (extra ops for <100MB liturgy `SYSTEM_DESIGN.md:12`).
 
-*Package-by-feature over package-by-layer:* Avoid `controllers/services/repositories/models`. Each feature owns its `domain/application/ports/adapters`. Current `liturgy/{model,provider,service,web}` is already halfway; collapse to canonical layout.
+*Package-by-feature:* Each feature owns its `controller`, `service`, `repository`, and `model` packages. Cross-cutting HTTP and configuration concerns live in `web` and `config`.
 
 ---
 
@@ -237,7 +237,7 @@ Multi-doc transactions used within a single use case when needed (e.g., `DeleteA
 ### 8.1 Internal Ingestion (scraper → backend) — MongoDB
 - `POST /internal/v1/liturgy/import` `CONTRACT_SCRAPER.md:88` `Content-Type: application/json; charset=UTF-8` `CONTRACT_SCRAPER.md:91`, `camelCase` `CONTRACT_SCRAPER.md:91`, dates `YYYY-MM-DD` `CONTRACT_SCRAPER.md:92`, timestamps `YYYY-MM-DD'T'HH:mm:ss'Z'` `CONTRACT_SCRAPER.md:93`.
 - **Auth:** `Authorization: Bearer <LITURGY_IMPORT_TOKEN>` `CONTRACT_SCRAPER.md:90`, `401` missing/malformed, `403` invalid `CONTRACT_SCRAPER.md:384`. Dedicated `BearerAuthFilter` for `/internal/**`, secret from `LITURGY_IMPORT_TOKEN` `CONTRACT_SCRAPER.md:610`, not JWT.
-- **DTOs:** Java 21 records `CONTRACT_SCRAPER.md:474` (`LiturgyImportRequest`, `Period`, `LiturgicalDayImport`, `CelebrationImport`, `LiturgicalSeasonImport`, `LiturgicalPartsImport`, `ReadingImport`, `SourceInfoImport`, `ValidationImport`) with `jakarta.validation` (`@NotBlank/@NotNull/@NotEmpty/@Valid`) `CONTRACT_SCRAPER.md:486`.
+- **DTOs:** Java 25 records `CONTRACT_SCRAPER.md:474` (`LiturgyImportRequest`, `Period`, `LiturgicalDayImport`, `CelebrationImport`, `LiturgicalSeasonImport`, `LiturgicalPartsImport`, `ReadingImport`, `SourceInfoImport`, `ValidationImport`) with `jakarta.validation` (`@NotBlank/@NotNull/@NotEmpty/@Valid`) `CONTRACT_SCRAPER.md:486`.
 - **Batch:** `days: list<LiturgicalDay>` `14-30` items `CONTRACT_SCRAPER.md:463`, envelope `schemaVersion, scraperVersion, scrapedAt, period, days` `CONTRACT_SCRAPER.md:99`.
 - **Hashes:** `sourceHash = SHA-256(raw bytes)` `CONTRACT_SCRAPER.md:230`, `contentHash = SHA-256(canonical JSON sort_keys, separators=(",",":"))` `CONTRACT_SCRAPER.md:236` on domain fields only `CONTRACT_SCRAPER.md:246` (exclude `scrapedAt, collectedAt, url, scraperVersion` `CONTRACT_SCRAPER.md:247`).
 - **Response:** `200 OK` / `201 Created` `CONTRACT_SCRAPER.md:451` body `{ importId (UUID/ULID), status SUCCESS/PARTIAL/FAILED, processed, created, updated, unchanged, rejected }` `CONTRACT_SCRAPER.md:420`. Errors: `400` malformed, `422` domain, `401/403` auth, `5xx` retry `CONTRACT_SCRAPER.md:451`.
@@ -335,4 +335,3 @@ importBatch(req):
 - [ ] `Reading` respects `text XOR options`? Unique indexes for `userId+localDate`, `followerId+followeeId`?
 - [ ] `Bearer` for `/internal/**`, `JWT` for `/api/**`?
 - [ ] Tests cover concurrent, idempotency, timezone, reuse, contract? Testcontainers Mongo only?
-

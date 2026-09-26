@@ -5,7 +5,7 @@ C4Container
   Person(user, "Client", "Browser / App")
 
   System_Boundary(sys, "Evangelizae System") {
-    Container(backend, "Backend", "Java 21, Spring Boot 4.1", "Modular Monolith<br/>/api/v1 + /internal/v1<br/>EvangelizaeApiApplication.java:8")
+    Container(backend, "Backend", "Java 25, Spring Boot 4.1", "Modular Monolith<br/>/api/v1 + /internal/v1<br/>EvangelizaeApiApplication.java:8")
     ContainerDb(mongo, "MongoDB", "MongoDB", "ALL: liturgy, identity, prayer, social<br/>liturgical_days, users, follows…<br/>Mongock + ClientSession")
     ContainerDb(redis, "Redis", "Redis", "Rate-limit, Idempotency TTL")
     Container(scraper, "LiturgyScraper", "Python, Docker cron", "Stateless job<br/>CONTRACT_SCRAPER.md:53")
