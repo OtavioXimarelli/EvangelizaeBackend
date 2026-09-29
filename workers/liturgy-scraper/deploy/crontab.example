@@ -1,0 +1,2 @@
+# Weekly run: Sunday 03:00 (server timezone), per project decision
+0 3 * * 0 cd /opt/liturgia-scraper && docker compose run --rm scraper >> /var/log/liturgia-scraper.log 2>&1

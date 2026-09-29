@@ -1,14 +1,24 @@
 spring:
   application:
     name: evangelizae-api
+  # Spring Boot 4 moved the MongoDB *connection* properties to `spring.mongodb.*`.
+  # `spring.data.mongodb.uri` still exists but no longer configures the client: the
+  # driver silently falls back to mongodb://localhost/test, ignoring MONGODB_URI
+  # entirely. Verified against spring-boot-mongodb 4.1.1 configuration metadata.
+  mongodb:
+    uri: ${MONGODB_URI}
   data:
     mongodb:
-      uri: ${MONGODB_URI}
+      database: ${MONGO_DATABASE:evangelizae}
   autoconfigure:
     exclude:
       - org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   jackson:
     default-property-inclusion: non_null
+  lifecycle:
+    # Caps `server.shutdown: graceful` at 10s instead of the 30s JVM default, so
+    # a VPS redeploy or `docker compose restart` is not stalled on a dead socket.
+    timeout-per-shutdown-phase: 10s
 
 server:
   port: ${PORT:8080}

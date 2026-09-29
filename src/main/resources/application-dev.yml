@@ -2,9 +2,11 @@ spring:
   config:
     activate:
       on-profile: dev
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/evangelizae}
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/evangelizae}
+      database: ${MONGO_DATABASE:evangelizae}
 
 server:
   forward-headers-strategy: none

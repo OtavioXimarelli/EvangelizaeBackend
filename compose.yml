@@ -1,0 +1,122 @@
+# Evangelizae — VPS stack.
+#
+# Topology, and why it is shaped this way:
+#
+#   edge (bridge)          web  <->  caddy  <->  api
+#                                        scraper -> api
+#   data (internal: true)  api  <->  mongo
+#
+# - `api` publishes no port to the host. The only way in is the reverse proxy,
+#   and the proxy does not route /internal/*. The import endpoint is therefore
+#   unreachable from the internet by network topology, not only by bearer token.
+# - `mongo` is on an `internal: true` network with no port published, and runs
+#   with authentication enabled. An unauthenticated 27017 on a public VPS is a
+#   data breach waiting to happen.
+# - `scraper` is a one-shot job behind a profile. There is no in-process
+#   scheduler in the API by design; host cron invokes it (see deploy/README.md).
+#
+# Usage:
+#   docker compose up -d mongo api
+#   docker compose --profile proxy up -d
+#   docker compose run --rm scraper          # manual import
+#
+name: evangelizae
+
+services:
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-evangelizae}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?set MONGO_ROOT_USERNAME in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set MONGO_ROOT_PASSWORD in .env}
+      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-evangelizae}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}
+    volumes:
+      - mongo_data:/data/db
+      - ./deploy/mongo-init.js:/docker-entrypoint-initdb.d/10-app-user.js:ro
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: evangelizae-api
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      PORT: 8080
+      MONGODB_URI: mongodb://${MONGO_APP_USERNAME}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_DATABASE:-evangelizae}?authSource=${MONGO_DATABASE:-evangelizae}
+      MONGO_DATABASE: ${MONGO_DATABASE:-evangelizae}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:?set APP_CORS_ALLOWED_ORIGINS in .env}
+      LITURGY_IMPORT_TOKEN: ${LITURGY_IMPORT_TOKEN:?set LITURGY_IMPORT_TOKEN in .env}
+      # Optional JVM tuning without rebuilding the image.
+      JAVA_TOOL_OPTIONS: ${API_JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError}
+    # No `ports:` on purpose — see the topology note above.
+    networks:
+      - data
+      - edge
+    stop_grace_period: 20s
+
+  scraper:
+    build:
+      context: ./workers/liturgy-scraper
+      dockerfile: Dockerfile
+    image: evangelizae-scraper
+    profiles: ["job"]
+    restart: "no"
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      LITURGY_IMPORT_URL: http://api:8080/internal/v1/liturgy/import
+      LITURGY_IMPORT_TOKEN: ${LITURGY_IMPORT_TOKEN:?set LITURGY_IMPORT_TOKEN in .env}
+      SCRAPER_DAYS_AHEAD: ${SCRAPER_DAYS_AHEAD:-14}
+      HTTP_TIMEOUT_SECONDS: ${HTTP_TIMEOUT_SECONDS:-30}
+      LOG_LEVEL: ${SCRAPER_LOG_LEVEL:-INFO}
+    networks:
+      - edge
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ["proxy"]
+    depends_on:
+      - api
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - edge
+
+  # The frontend is deployed separately and is not part of this stack file.
+  # `caddy` routes everything that is not /api/* to a service named `web` on
+  # this network; attach the frontend container to the `edge` network by name if
+  # it is not part of this Compose project.
+
+volumes:
+  mongo_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  data:
+    internal: true
+  edge:

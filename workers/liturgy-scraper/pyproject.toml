@@ -1,0 +1,21 @@
+[project]
+name = "liturgyscraper"
+version = "0.1.0"
+description = "Daily liturgy scraper: CNBB (primary) + Vatican News (validation), sends batch to Spring Boot backend"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "httpx>=0.28",
+    "beautifulsoup4>=4.14",
+    "lxml>=6.0",
+    "pydantic>=2.12",
+    "tenacity>=9.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
