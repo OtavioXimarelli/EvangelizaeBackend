@@ -73,6 +73,10 @@ class ScraperService:
             day = self._build_day(target_date)
             if day is not None:
                 days.append(day)
+            else:
+                # The import is all-or-nothing, so a hole is a failed run. Skip
+                # silently and let the caller compare against the window.
+                logger.warning("No importable day for %s", target_date)
 
         return LiturgyImportRequest(
             schema_version=SCHEMA_VERSION,

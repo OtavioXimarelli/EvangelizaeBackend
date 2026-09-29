@@ -41,6 +41,7 @@ def main(
     dry_run: bool = False,
     start_date: date | None = None,
     days_ahead: int | None = None,
+    days_behind: int | None = None,
 ) -> None:
     """Scrape a period and either print it or POST it to Spring."""
     # Config from .env / env vars (see .env.example)
@@ -51,9 +52,18 @@ def main(
         if days_ahead is not None
         else int(os.getenv("SCRAPER_DAYS_AHEAD", "14"))
     )
+    if days_behind is not None:
+        configured_behind = days_behind
+    elif start_date is not None:
+        # An explicit --start-date is the window start, not its anchor.
+        configured_behind = 0
+    else:
+        configured_behind = int(os.getenv("SCRAPER_DAYS_BEHIND", "7"))
     timeout = int(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
     if configured_days < 1:
         raise ValueError("days must be at least 1")
+    if configured_behind < 0:
+        raise ValueError("SCRAPER_DAYS_BEHIND must not be negative")
     if timeout < 1:
         raise ValueError("HTTP_TIMEOUT_SECONDS must be at least 1")
     if not dry_run and (not import_token or import_token == "change-me"):
@@ -71,11 +81,13 @@ def main(
             VaticanParser(),
             http_client=client,
         )
-        start = start_date or today_in_scraper_timezone()
-        end = start + timedelta(days=configured_days - 1)
+        # The window reaches backwards as well as forwards so a failed run heals
+        # itself: a forward-only window leaves a missed date permanently
+        # unimported, and the API answers 503 for it forever.
+        start = (start_date or today_in_scraper_timezone()) - timedelta(days=configured_behind)
+        end = start + timedelta(days=configured_days + configured_behind - 1)
         batch = service.scrape_period(start, end)
-        if not batch.days:
-            raise RuntimeError("scraping produced no importable days; batch was not sent")
+        assert_complete_batch(batch, start, end)
         if dry_run:
             output = batch.model_dump_json(
                 by_alias=True,
@@ -87,6 +99,33 @@ def main(
             output = json.dumps(result, ensure_ascii=False, sort_keys=True)
 
     print(output)
+
+
+def assert_complete_batch(batch, start: date, end: date) -> None:
+    """Refuse to send a batch the backend would reject, or that is short.
+
+    The import request is validated in full before anything is written, so one
+    bad day discards the whole run. A short batch would instead leave the tail
+    of the window unimported, and the API answers 503 for those days until a
+    later run happens to cover them.
+    """
+    expected = [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
+    present = {day.date for day in batch.days}
+    missing = [day for day in expected if day not in present]
+    if missing:
+        raise RuntimeError(
+            f"scraping produced {len(batch.days)} of {len(expected)} days; "
+            f"missing {', '.join(day.isoformat() for day in missing)}; batch was not sent"
+        )
+
+    for day in batch.days:
+        for reading in day.parts.readings:
+            for candidate in reading.options or [reading]:
+                if not candidate.text:
+                    raise RuntimeError(
+                        f"{day.date.isoformat()} {reading.type.value} "
+                        f"{candidate.reference or '(no citation)'} has no text; batch was not sent"
+                    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,6 +147,12 @@ def parse_args() -> argparse.Namespace:
         dest="days_ahead",
         help="number of consecutive days to scrape (default: SCRAPER_DAYS_AHEAD or 14)",
     )
+    parser.add_argument(
+        "--days-behind",
+        type=int,
+        dest="days_behind",
+        help="days to re-scrape before the window start (default: SCRAPER_DAYS_BEHIND or 7)",
+    )
     return parser.parse_args()
 
 
@@ -122,6 +167,7 @@ if __name__ == "__main__":
             dry_run=args.dry_run,
             start_date=args.start_date,
             days_ahead=args.days_ahead,
+            days_behind=args.days_behind,
         )
     except Exception:
         logging.exception("Liturgy scraper failed")

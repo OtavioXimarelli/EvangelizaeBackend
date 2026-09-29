@@ -116,11 +116,18 @@ After a scraper outage, or to seed a fresh database:
 
 ```bash
 cd /opt/evangelizae/api
-SCRAPER_DAYS_AHEAD=14 docker compose run --rm --no-deps -e SCRAPER_DAYS_AHEAD=14 scraper
+# An explicit range: --start-date is the window start, and the default
+# lookbehind does not apply on top of it.
+docker compose run --rm --no-deps scraper \
+  --start-date 2026-12-01 --days 31 --days-behind 0
 ```
 
 Re-importing a date is safe. Documents are keyed by the ISO date string, so a
 repeat import replaces rather than duplicates.
+
+`assert_complete_batch` refuses to POST a window with a hole in it, so a partial
+backfill is reported as a failed run rather than silently leaving the tail of the
+range unimported.
 
 ## Backups
 
