@@ -151,13 +151,21 @@ whole batch:
 |---|---|---|
 | 2026-12-24, 2026-12-25 | Three Masses in one body, each repeating every reading marker | Readings from the wrong Mass published; Gospel mismatched |
 | 2026-11-02 | `Outras leituras próprias à escolha` catalogue appended to All Souls | Optional readings published as the day's |
+| 2026-04-04 | Easter Vigil sharing its body with the Masses that follow | Fifteen readings from other Masses published as the day's |
 | 2026-04-05 | Easter Sunday published with an empty `title` and no season line | `could not identify the CNBB liturgical season` — a permanent 503 on Easter |
 
 CNBB also marks these headings up three different ways (a `<center>` nested in
 the red `<font>`, a bare `<font>` with an empty `<center>` beside it, and the
-Mass name left inside the marker's own `<center>`), and its HTML is unbalanced
-around them, so the section boundary has to be found in the parse tree. Fixed in
-`44cb237`; all three dates are now fixtures.
+Mass name left inside the marker's own `<center>`), qualifies them (`PRIMEIRA
+LEITURA (mais longa)`), and leaves the HTML unbalanced around them, so the
+section boundary has to be found in the parse tree.
+
+The 2026-04-04 row is the one that changed the design. Every one of those fifteen
+readings had text, so the `EMPTY-TEXT` gate passed. What was wrong was not a
+missing value but a value belonging to another Mass, and no check on the plan as
+written can see that. The parser now matches each summary citation against the
+body readings that quote it and drops everything else, and the gate checks
+citations — see §7.1. All of these dates are fixtures.
 
 ### Phase 2 — Guard the batch (~1h) — **done** (`091adcc`)
 
@@ -201,8 +209,16 @@ regression test that cannot fail is not a test.
 
 ### Phase 5 — Reconcile, deploy, schedule (~1.5h) — **not started**
 
-1. Inspect production `liturgical_days` for non-date-keyed `_id`s
-   (`LITURGY_INTEGRATION_PLAN.md:419-429`); convert or recreate the collection.
+1. Run the reconciliation gate. It is a script, not a judgement call:
+   ```bash
+   docker compose exec -T -e RECONCILE_MODE=check mongo mongosh \
+     -u "$MONGO_APP_USERNAME" -p "$MONGO_APP_PASSWORD" \
+     --authenticationDatabase "$MONGO_DATABASE" --quiet \
+     deploy/reconcile-liturgical-days.js
+   ```
+   Repair with `RECONCILE_MODE=fix` (backfills `provider` from the stored
+   `PRIMARY` source, never invents one) and re-run the gate until it passes. See
+   `deploy/README.md`.
 2. Backfill `today-7 … today+13`.
 3. Deploy. Confirm the strict provider path returns 200, not 503.
 4. Install the daily cron from `deploy/README.md`, deliberately off the hour, and
@@ -211,9 +227,9 @@ regression test that cannot fail is not a test.
 5. Confirm `GET /api/v1/liturgy/today` in production and CORS from the real
    frontend origin.
 
-Steps 1 and 3 are the ordering constraint in §4.1 and are not optional: the
-strict provider read path in `bb593e8` is already on this branch, and shipping it
-against an unreconciled collection takes `/pt/liturgy` dark.
+Step 1 and step 3 are the ordering constraint in §4.1. The strict provider read
+path in `bb593e8` is already on this branch, and shipping it against an
+unreconciled collection takes `/pt/liturgy` dark.
 
 
 ## 7. Definition of done
@@ -240,40 +256,44 @@ Phase 5.
 
 ### 7.1 The scan is a gate, not a one-off
 
-A 120-day window from any given date will not contain 2026-11-02, 2026-12-24,
-2026-12-25 or 2026-04-05. The plan's gate therefore passes on a window that still
-contains four unparseable days. The only sweep that exercises a full liturgical
-year is the 400-day one, and it is what caught these. Rerun it before any change
-to `cnbb_parser.py`:
+A 120-day window from any given date will not contain 2026-04-04, 2026-11-02,
+2026-12-24, 2026-12-25 or 2026-04-05. The plan's gate therefore passes on a
+window that still contains days the parser gets wrong. The only sweep that
+exercises a full liturgical year is the 400-day one:
 
 ```bash
 cd workers/liturgy-scraper
-uv run python - <<'PY'
-import logging
-from datetime import date, timedelta
-import httpx
-from app.parsers.cnbb_parser import CnbbParser
-from app.sources.cnbb import CnbbSource
-
-logging.disable(logging.CRITICAL)
-client = httpx.Client(timeout=30, follow_redirects=True,
-                      headers={"User-Agent": "LiturgyScraper/0.1.0"})
-cnbb, parser = CnbbSource(client), CnbbParser()
-start, failures = date(2026, 1, 1), 0
-for offset in range(400):
-    day = start + timedelta(days=offset)
-    try:
-        parser.parse(cnbb.fetch_html(day), day)
-    except Exception as error:
-        failures += 1
-        print(f"FAIL {day} {type(error).__name__}: {error}")
-print(f"{400 - failures}/400 parsed")
-raise SystemExit(1 if failures else 0)
-PY
+uv run python tools/sweep.py
 ```
 
-It needs network access to CNBB, so it cannot run in CI. It must run by hand
-before a deploy that touches the parser.
+It checks two things per day, and the second is the one that matters:
+
+1. the day parses, and every reading and option carries text — the plan's
+   original `EMPTY-TEXT` / `EMPTY-OPT` check;
+2. **every citation published is one the day's own summary named.**
+
+The second check exists because the first one passed for a long time on a day
+that was badly wrong. Holy Saturday (2026-04-04) shares its body with the Easter
+Vigil, whose seven readings and psalms sit alongside the readings of the Masses
+that follow. Walking the body and the summary positionally published fifteen of
+them, every one non-empty, every one belonging to a different Mass. A gate that
+only asks "is there text?" cannot see that. The parser now matches each summary
+citation against the body readings that quote it, and drops the rest.
+
+The sweep needs network access to CNBB, so it does not run in `ci`. It runs in
+the `sweep` workflow, daily at 05:23 UTC and on demand, which is how a source-side
+markup change gets caught within a day rather than at the next deploy. Rerun it
+by hand before any change to `cnbb_parser.py`.
+
+When it fails, refresh the fixtures for the known-broken dates and review the
+diff — a fixture is evidence about what the source published, so it must never be
+committed by a machine:
+
+```bash
+uv run python tools/refresh_fixtures.py --dry-run
+uv run python tools/refresh_fixtures.py
+```
+
 
 
 ## 8. Out of scope

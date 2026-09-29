@@ -68,6 +68,38 @@ curl -s -o /dev/null -w '%{http_code}\n' https://$SITE_DOMAIN/internal/v1/liturg
 ss -lntp | grep 27017 || echo '27017 not listening — correct'
 ```
 
+## Reconciling before the strict provider read path
+
+The API refuses to serve a document whose `provider` is unknown — it answers
+`503` rather than labelling the source `mongodb`. That is the correct behaviour,
+and it is why reconciliation is a **gate**, not a memory step. Run this before
+the deploy that introduces the strict path; shipping the code against an
+unreconciled collection takes `/pt/liturgy` dark.
+
+```bash
+cd /opt/evangelizae/api
+docker compose exec -T -e RECONCILE_MODE=check mongo mongosh \
+  -u "$MONGO_APP_USERNAME" -p "$MONGO_APP_PASSWORD" \
+  --authenticationDatabase "$MONGO_DATABASE" --quiet \
+  deploy/reconcile-liturgical-days.js
+```
+
+It reports three faults and exits non-zero if any are present:
+
+- `_id` values that are not ISO dates. `findByDate(date)` cannot reach those
+  rows, so the day is a `503` no matter what the scraper does.
+- Documents with no `date` field.
+- Documents whose `provider` is not `CNBB`.
+
+To repair the provider field, run the same command with `RECONCILE_MODE=fix`. It
+backfills from the `PRIMARY` source already stored on each document — it never
+invents a value. A document with no `PRIMARY` source is reported as
+`UNRECOVERABLE`: its provenance really is unknown, and the only fix is to
+re-import that date. The mode is an environment variable, not an argument,
+because `mongosh` rejects trailing command-line arguments after the script path.
+Both modes are idempotent, and `fix` runs the gate afterwards, so a partial
+repair still fails the deploy.
+
 ## Scheduling the scraper
 
 There is no in-process scheduler in the API, by design: ingestion is push-only
@@ -127,7 +159,32 @@ repeat import replaces rather than duplicates.
 
 `assert_complete_batch` refuses to POST a window with a hole in it, so a partial
 backfill is reported as a failed run rather than silently leaving the tail of the
-range unimported.
+range unimported. A missing day also shows up in the reconciliation report
+above, since the count no longer covers the window.
+
+## When CNBB changes its markup
+
+A source-side markup change breaks ingestion silently from the outside: the
+scraper exits `1`, the alert fires, but nothing in the repository has changed.
+The `sweep` workflow runs daily against the live source for exactly this, and
+`workers/liturgy-scraper/tools/sweep.py` is the same check by hand. Run it before
+any deploy that touches `cnbb_parser.py` — a 120-day window is not enough, see
+`docs/LAUNCH_PLAN_2026-09-28.md` §7.1.
+
+```bash
+cd workers/liturgy-scraper
+uv run python tools/sweep.py                       # two liturgical years
+uv run python tools/sweep.py --start 2027-01-01 --days 60
+```
+
+A failure names the date and the shape. Refresh the fixtures for the dates the
+parser has broken on, review the diff, and only then commit it:
+
+```bash
+uv run python tools/refresh_fixtures.py --dry-run
+uv run python tools/refresh_fixtures.py
+```
+
 
 ## Backups
 
