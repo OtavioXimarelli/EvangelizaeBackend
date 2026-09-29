@@ -13,7 +13,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 logger = logging.getLogger(__name__)
 
-1
+
 def _is_retryable(error: BaseException) -> bool:
     if isinstance(error, httpx.TransportError):
         return True

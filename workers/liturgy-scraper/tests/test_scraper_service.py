@@ -34,10 +34,20 @@ def test_end_to_end_batch_and_spring_post():
             return httpx.Response(200, text=_fixture("vatican", "normal_day.html"))
         if request.url.host == "spring.example":
             assert request.headers["authorization"] == "Bearer secret"
+            assert request.headers["x-request-id"]
             imported.update(json.loads(request.content))
             return httpx.Response(
                 200,
-                json={"status": "SUCCESS", "processed": 1, "created": 1},
+                json={
+                    "importId": "b3b0c1f0-0000-4000-8000-000000000000",
+                    "status": "SUCCESS",
+                    "received": 1,
+                    "processed": 1,
+                    "created": 1,
+                    "updated": 0,
+                    "unchanged": 0,
+                    "failed": [],
+                },
             )
         raise AssertionError(f"unexpected URL: {request.url}")
 
@@ -65,6 +75,120 @@ def test_end_to_end_batch_and_spring_post():
     assert all(source.content_hash.startswith("sha256:") for source in day.sources)
     assert imported["period"] == {"from": "2026-08-25", "to": "2026-08-25"}
     assert imported["days"][0]["sources"][0]["role"] == "PRIMARY"
+
+
+def _batch_of_one() -> object:
+    """A one-day batch built from fixtures, independent of the POST under test."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_fixture("cnbb", "normal_day.json"))
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        service = ScraperService(
+            CnbbSource(client),
+            VaticanSource(client),
+            CnbbParser(),
+            VaticanParser(),
+            http_client=client,
+        )
+        return service.scrape_period(TARGET_DATE, TARGET_DATE)
+
+
+def _send(handler):
+    """POST a one-day batch through a mocked Spring and return the result."""
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        service = ScraperService(None, None, None, None, http_client=client)
+        return service.send_to_spring(
+            _batch_of_one(), "https://spring.example/import", "secret"
+        )
+
+
+def test_send_sends_and_honours_request_id():
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["id"] = request.headers["x-request-id"]
+        return httpx.Response(
+            200,
+            json={"status": "SUCCESS", "received": 1, "processed": 1, "failed": []},
+        )
+
+    _send(handler)
+
+    assert seen["id"]
+
+
+def test_partial_status_is_a_failed_run():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "status": "PARTIAL",
+                "received": 1,
+                "processed": 0,
+                "failed": [{"date": "2026-08-25", "code": "INVALID", "message": "x"}],
+            },
+        )
+
+    with pytest.raises(ValueError, match="PARTIAL"):
+        _send(handler)
+
+
+def test_short_processed_count_is_a_failed_run():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"status": "SUCCESS", "received": 1, "processed": 0, "failed": []},
+        )
+
+    with pytest.raises(ValueError, match="processed 0 of 1"):
+        _send(handler)
+
+
+def test_rejected_date_is_a_failed_run():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "status": "SUCCESS",
+                "received": 1,
+                "processed": 1,
+                "failed": [{"date": "2026-08-25", "code": "INVALID", "message": "x"}],
+            },
+        )
+
+    with pytest.raises(ValueError, match="rejected dates: 2026-08-25"):
+        _send(handler)
+
+
+def test_server_error_is_retried_then_succeeds():
+    attempts = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            return httpx.Response(503)
+        return httpx.Response(
+            200,
+            json={"status": "SUCCESS", "received": 1, "processed": 1, "failed": []},
+        )
+
+    result = _send(handler)
+
+    assert result["status"] == "SUCCESS"
+    assert attempts["count"] == 3
+
+
+def test_forbidden_is_not_retried():
+    attempts = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        return httpx.Response(403)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        _send(handler)
+    assert attempts["count"] == 1
 
 
 def test_vatican_failure_keeps_primary_day_with_warning():

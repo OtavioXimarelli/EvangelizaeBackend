@@ -12,8 +12,15 @@ Flow for period (14 days):
 
 from datetime import date, datetime, timedelta, timezone
 import logging
+import uuid
 
 import httpx
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.models.liturgy import (
     LiturgicalDay,
@@ -34,6 +41,16 @@ from app.validators.liturgy_validator import (
 logger = logging.getLogger(__name__)
 SCHEMA_VERSION = "1.0"
 SCRAPER_VERSION = "0.1.0"
+
+
+def _is_retryable_status(error: BaseException) -> bool:
+    """Retry 429, 5xx and transport failures; a bad token will stay bad."""
+    if isinstance(error, httpx.TransportError):
+        return True
+    if isinstance(error, httpx.HTTPStatusError):
+        code = error.response.status_code
+        return code in {408, 429} or code >= 500
+    return False
 
 
 class ScraperService:
@@ -168,33 +185,123 @@ class ScraperService:
             content_hash=content_hash,
         )
 
-    def send_to_spring(self, batch: LiturgyImportRequest, import_url: str, token: str) -> dict:
+    def send_to_spring(
+        self,
+        batch: LiturgyImportRequest,
+        import_url: str,
+        token: str,
+        *,
+        request_id: str | None = None,
+    ) -> dict:
         """POST batch to Spring Boot (spec §20).
 
         Endpoint: POST /internal/v1/liturgy/import
-        Headers: Authorization: Bearer <token>
+        Headers: Authorization: Bearer <token>, X-Request-Id
         Body: batch.model_dump_json(by_alias=True, exclude_none=True)
+
+        The response is verified, not trusted: a 200 with PARTIAL status, a
+        processed count below the number of days sent, or a missing date all
+        mean the database is not what the scraper believes it is, and the run
+        must fail loudly so the scheduler alerts.
 
         Returns:
             Parsed JSON response: {importId, status, processed, created, updated, unchanged}
         """
         if not token:
             raise ValueError("an import bearer token is required")
+
+        correlation = request_id or uuid.uuid4().hex
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "X-Request-Id": correlation,
         }
         body = batch.model_dump_json(by_alias=True, exclude_none=True)
-        if self.http_client is not None:
-            response = self.http_client.post(import_url, content=body, headers=headers)
-        else:
-            response = httpx.post(import_url, content=body, headers=headers)
-        response.raise_for_status()
+        logger.info(
+            "POST %s days=%d period=%s..%s X-Request-Id=%s",
+            import_url,
+            len(batch.days),
+            batch.period.from_,
+            batch.period.to,
+            correlation,
+        )
+        client = self.http_client or httpx
+        response = self._post_with_retry(client, import_url, body, headers)
         result = response.json()
         if not isinstance(result, dict):
             raise ValueError("Spring import endpoint returned a non-object JSON response")
+
+        self._verify_import_result(result, batch, correlation)
+        logger.info(
+            "importId=%s status=%s processed=%s created=%s updated=%s unchanged=%s",
+            result.get("importId"),
+            result.get("status"),
+            result.get("processed"),
+            result.get("created"),
+            result.get("updated"),
+            result.get("unchanged"),
+        )
         return result
+
+    @staticmethod
+    def _post_with_retry(
+        client, import_url: str, body: str, headers: dict[str, str]
+    ) -> httpx.Response:
+        """POST with tenacity retry on 429, 5xx and transport failures.
+
+        A 4xx other than 429 is not retried: a bad token will still be bad on
+        the third attempt, and retrying only delays the alert.
+        """
+
+        @retry(
+            retry=retry_if_exception(_is_retryable_status),
+            wait=wait_exponential(multiplier=0.5, min=0.5, max=8),
+            stop=stop_after_attempt(4),
+            reraise=True,
+        )
+        def post() -> httpx.Response:
+            response = client.post(import_url, content=body, headers=headers)
+            response.raise_for_status()
+            return response
+
+        return post()
+
+    @staticmethod
+    def _verify_import_result(
+        result: dict, batch: LiturgyImportRequest, request_id: str
+    ) -> None:
+        """Treat anything but a complete SUCCESS as a failed run.
+
+        The endpoint validates the whole request before writing, so PARTIAL can
+        only mean the batch was partially rejected — the database is not what
+        the scraper thinks it is, and the operator needs to know now.
+        """
+        sent = {day.date for day in batch.days}
+        status = result.get("status")
+        if status != "SUCCESS":
+            raise ValueError(f"import {request_id} returned status={status!r}")
+
+        received = result.get("received")
+        if received is not None and received != len(sent):
+            raise ValueError(
+                f"import {request_id} received {received} of {len(sent)} days"
+            )
+
+        processed = result.get("processed")
+        if processed != len(sent):
+            raise ValueError(
+                f"import {request_id} processed {processed} of {len(sent)} days"
+            )
+
+        sent_dates = {day.isoformat() for day in sent}
+        rejected = sorted(
+            str(entry.get("date"))
+            for entry in result.get("failed") or []
+            if isinstance(entry, dict) and str(entry.get("date")) in sent_dates
+        )
+        if rejected:
+            raise ValueError(f"import {request_id} rejected dates: {', '.join(rejected)}")
 
     @staticmethod
     def _source_url(source, target_date: date) -> str | None:

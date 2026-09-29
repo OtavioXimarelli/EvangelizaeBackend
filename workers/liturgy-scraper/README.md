@@ -64,12 +64,15 @@ docker compose run --rm scraper
 Agendado via cron (ver `deploy/crontab.example`):
 
 ```cron
-0 3 * * 0 docker compose run --rm scraper
+23 4 * * * docker compose run --rm scraper
 ```
 
 ## Regras-chave
 
-- Janela de coleta: ~14 dias à frente.
+- Janela de coleta: 7 dias atrás e 14 à frente (`today-7 … today+13`, 21 dias).
+  O lookbehind é o que torna a ingestão auto-curativa: uma janela só à frente
+  deixaria uma data perdida por uma falha permanentemente não importada, e a
+  API responderia `503` para ela para sempre.
 - A API pública usada pelo próprio site da CNBB é consultada por data; o JSON
   retornado contém fragmentos HTML que são normalizados pelo parser.
 - CNBB = `PRIMARY`; Vatican News = `VALIDATION` (uma falha do Vaticano gera
@@ -77,9 +80,16 @@ Agendado via cron (ver `deploy/crontab.example`):
 - Dois hashes SHA-256 por dia: `sourceHash` (resposta bruta da fonte) e `contentHash` (JSON canônico normalizado).
 - Envio em **um único batch** via `POST /internal/v1/liturgy/import` (idempotente, upsert no lado Java).
 - Python **não acessa o PostgreSQL** nem conhece IDs internos do banco.
-- Leituras alternativas são representadas em `Reading.options`; se a CNBB só
-  publicar o texto integral da primeira opção, as demais preservam ao menos a
-  referência explícita apresentada no resumo oficial.
+- Leituras alternativas: quando a CNBB publica um corpo para cada opção
+  (memoriais com duas primeiras leituras permitidas, ~2,5% dos dias), cada uma
+  vira uma `Reading` independente com seu texto. Quando há um único corpo para
+  as opções, elas viram um grupo em `Reading.options` repetindo esse texto.
+  Nenhuma opção é publicada sem texto: o import é validado por inteiro antes de
+  gravar, então um dia inválido rejeitaria o batch todo.
+- O batch é conferido contra a janela antes do POST, e a resposta do Spring é
+  verificada (`status == SUCCESS`, contagem completa, nenhuma data rejeitada).
+  `429`, `5xx` e falhas de transporte são repetidos; `X-Request-Id` e o
+  `importId` retornado são logados.
 
 ## Estado atual
 
