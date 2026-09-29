@@ -216,3 +216,89 @@ def test_easter_sunday_declares_no_season():
 def test_rejects_wrong_response_date():
     with pytest.raises(ValueError, match="returned 2026-08-25"):
         CnbbParser().parse(_load_fixture("normal_day.json"), date(2026, 8, 26))
+
+
+class TestSectionPlan:
+    """Isolated unit tests for _section_plan edge cases."""
+
+    def _make_soup(self, html: str):
+        from bs4 import BeautifulSoup
+
+        return BeautifulSoup(f"<main>{html}</main>", "lxml")
+
+    def _find_markers(self, soup):
+        markers = []
+        for tag in soup.find_all(True):
+            marker_type = CnbbParser._marker_type(tag)
+            if marker_type is not False:
+                markers.append(tag)
+        return CnbbParser._drop_nested_markers(
+            [(tag, CnbbParser._marker_type(tag)) for tag in markers]
+        )
+
+    def test_single_section_no_heading(self):
+        """All markers belong to section 0 when no heading is present."""
+        soup = self._make_soup(
+            '<font color="red">PRIMEIRA LEITURA</font>'
+            '<font color="tomato">Gn 1,1-2</font>'
+            '<font color="red">SALMO RESPONSORIAL</font>'
+        )
+        markers = self._find_markers(soup)
+        section_of, end_of = CnbbParser()._section_plan(soup, [t for t, _ in markers])
+        assert all(section_of[i] == 0 for i in range(len(markers)))
+        assert len(end_of) == 0
+
+    def test_heading_opens_new_section(self):
+        """A heading increments the section counter for subsequent markers."""
+        soup = self._make_soup(
+            '<font color="red">PRIMEIRA LEITURA</font>'
+            '<font color="tomato">Gn 1,1-2</font>'
+            '<center><font color="red">Missa da manhã</font></center>'
+            '<font color="red">PRIMEIRA LEITURA</font>'
+            '<font color="tomato">Is 2,1-5</font>'
+        )
+        markers = self._find_markers(soup)
+        section_of, end_of = CnbbParser()._section_plan(soup, [t for t, _ in markers])
+        assert section_of[0] == 0
+        assert section_of[1] == 1
+
+    def test_heading_inside_marker_opens_that_marker(self):
+        """A heading nested inside a marker element belongs to the new section."""
+        soup = self._make_soup(
+            '<center><font color="red">Missa da manhã</font>'
+            '<font color="red">PRIMEIRA LEITURA</font></center>'
+            '<font color="tomato">Gn 1,1-2</font>'
+        )
+        markers = self._find_markers(soup)
+        section_of, end_of = CnbbParser()._section_plan(soup, [t for t, _ in markers])
+        assert section_of[0] == 1
+
+    def test_heading_ends_previous_marker(self):
+        """A heading sets the end boundary of the previous marker."""
+        soup = self._make_soup(
+            '<font color="red">PRIMEIRA LEITURA</font>'
+            '<font color="tomato">Gn 1,1-2</font>'
+            '<center><font color="red">Missa da manhã</font></center>'
+            '<font color="red">PRIMEIRA LEITURA</font>'
+        )
+        markers = self._find_markers(soup)
+        section_of, end_of = CnbbParser()._section_plan(soup, [t for t, _ in markers])
+        assert 0 in end_of
+
+    def test_multiple_sections_scored_correctly(self):
+        """Three sections: before heading, between headings, after last heading."""
+        soup = self._make_soup(
+            '<font color="red">PRIMEIRA LEITURA</font>'
+            '<font color="tomato">Gn 1,1-2</font>'
+            '<center><font color="red">Missa 1</font></center>'
+            '<font color="red">PRIMEIRA LEITURA</font>'
+            '<font color="tomato">Is 2,1-5</font>'
+            '<center><font color="red">Missa 2</font></center>'
+            '<font color="red">PRIMEIRA LEITURA</font>'
+            '<font color="tomato">Jr 3,1-5</font>'
+        )
+        markers = self._find_markers(soup)
+        section_of, end_of = CnbbParser()._section_plan(soup, [t for t, _ in markers])
+        assert section_of[0] == 0
+        assert section_of[1] == 1
+        assert section_of[2] == 2

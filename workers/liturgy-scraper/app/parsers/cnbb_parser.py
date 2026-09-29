@@ -339,11 +339,14 @@ class CnbbParser:
                 # where the body prints "Sl 22(23),1-3.4.5.6". The order still
                 # agrees, so the next unclaimed reading is the one intended; the
                 # citation published is the summary's, not the body's.
+                # Require verse-range overlap so a misidentified section cannot
+                # silently publish a reading from the wrong Mass.
                 if cursor < len(parsed):
                     reading = parsed[cursor]
-                    reading.reference = reference
-                    result.append(reading)
-                    cursor += 1
+                    if self._verse_key(reference) in self._verse_key(reading.reference or ""):
+                        reading.reference = reference
+                        result.append(reading)
+                        cursor += 1
                 continue
 
             if len(claimed) == len(alternatives):
@@ -407,6 +410,14 @@ class CnbbParser:
         value = re.sub(r"\(\s*R[.:].*?\)", " ", reference, flags=re.I)
         value = re.sub(r"\([^)]*\)", " ", value)
         return re.sub(r"[^0-9,.\-]+", "", value)
+
+    @staticmethod
+    def extract_summary_references(soup: BeautifulSoup) -> list[str]:
+        """Public alias for _extract_summary_references.
+
+        Used by tools/sweep.py so the gate does not depend on a private method.
+        """
+        return CnbbParser._extract_summary_references(soup)
 
     def _require_text(self, readings: list[Reading]) -> None:
         """Invariant: no reading and no option may be published without text."""

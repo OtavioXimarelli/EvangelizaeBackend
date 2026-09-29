@@ -145,7 +145,7 @@ def parse_args() -> argparse.Namespace:
         "--days",
         type=int,
         dest="days_ahead",
-        help="number of consecutive days to scrape (default: SCRAPER_DAYS_AHEAD or 14)",
+        help="number of days to scrape including the start date (default: SCRAPER_DAYS_AHEAD or 14)",
     )
     parser.add_argument(
         "--days-behind",

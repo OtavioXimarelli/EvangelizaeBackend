@@ -1,6 +1,6 @@
 # LiturgyScraper ⇄ Backend Integration Contract
 
-This document defines the complete technical contract between the **LiturgyScraper** service (Python) and the **Core Backend Application** (Java / Spring Boot + PostgreSQL).
+This document defines the complete technical contract between the **LiturgyScraper** service (Python) and the **Core Backend Application** (Java / Spring Boot + MongoDB).
 
 ---
 
@@ -35,13 +35,13 @@ This document defines the complete technical contract between the **LiturgyScrap
 │  - Executes transactional upsert by calendar date        │
 │  - Detects changes via contentHash comparison            │
 │  - Manages database primary keys & relational integrity  │
-│  - Persists data & version history in PostgreSQL         │
+│  - Persists data & version history in MongoDB           │
 │  - Serves public/client-facing APIs                      │
 └──────────────────────────────────────────────────────────┘
 ```
 
 #### Key Architecture Principles
-1. **Stateless Scraper**: The Python scraper does **not** maintain a persistent database, does not hold state between runs, and has **no direct access to PostgreSQL**.
+1. **Stateless Scraper**: The Python scraper does **not** maintain a persistent database, does not hold state between runs, and has **no direct access to MongoDB**.
 2. **Database Isolation**: The Python scraper has no knowledge of internal database IDs (UUIDs, sequence IDs) or internal database schemas.
 3. **Idempotent Batch Delivery**: The scraper sends a sliding collection window (typically **14 days ahead**) in a single atomic HTTP POST request.
 4. **Primary Source Authority**: CNBB is the source of truth for Brazilian liturgy. Vatican News is strictly a validation aid. A failure or discrepancy in Vatican News generates a warning/flag but does not prevent valid CNBB data from being ingested.

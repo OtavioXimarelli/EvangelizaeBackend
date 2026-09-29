@@ -57,7 +57,7 @@ def check_day(parser: CnbbParser, html: str, target: date) -> list[str]:
             if not candidate.text:
                 problems.append(f"{reading.type.value} {candidate.reference}: no text")
 
-    summary = CnbbParser._extract_summary_references(
+    summary = CnbbParser.extract_summary_references(
         BeautifulSoup(str(json.loads(html)["content"]["details"]), "lxml")
     )
     for reading in parts.readings:

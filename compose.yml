@@ -29,9 +29,9 @@ services:
     environment:
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-evangelizae}
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?set MONGO_ROOT_USERNAME in .env}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set MONGO_ROOT_PASSWORD in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set MONGO_ROOT_PASSWORD in .env}  # rotate regularly; never commit real values
       MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-evangelizae}
-      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}  # rotate regularly; never commit real values
     volumes:
       - mongo_data:/data/db
       - ./deploy/mongo-init.js:/docker-entrypoint-initdb.d/10-app-user.js:ro

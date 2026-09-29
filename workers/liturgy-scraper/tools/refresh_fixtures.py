@@ -41,9 +41,20 @@ KNOWN_SHAPES: dict[str, str] = {
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="report what would change without writing (default: True)",
+    )
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help="actually write the refreshed fixtures",
+    )
     parser.add_argument("--timeout", type=int, default=30)
     args = parser.parse_args()
+    dry_run = args.dry_run and not args.write
 
     with httpx.Client(
         timeout=args.timeout,
@@ -61,7 +72,7 @@ def main() -> int:
             if existing == canonical:
                 print(f"unchanged {path.name}")
                 continue
-            if args.dry_run:
+            if dry_run:
                 print(f"WOULD CHANGE {path.name}")
                 continue
             path.write_text(canonical, encoding="utf-8")

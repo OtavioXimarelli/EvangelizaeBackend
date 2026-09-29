@@ -59,7 +59,7 @@ public class LiturgyService {
         return repository.findByDate(date)
                 .map(this::toDailyLiturgy)
                 .orElseThrow(() -> new LiturgyUnavailableException(
-                        "A liturgia não está disponível para o dia de " + date));
+                        "Liturgy is not available for " + date));
     }
 
     public LiturgyImportResponse importBatch(LiturgyImportRequest request) {
@@ -252,7 +252,7 @@ public class LiturgyService {
         var readings = document.readings();
         if (readings == null || readings.isEmpty()) {
             throw new LiturgyUnavailableException(
-                    "A liturgia não possui leituras para o dia de " + document.date());
+                    "Liturgy has no readings for " + document.date());
         }
 
         var groups = Arrays.stream(ReadingKind.values())
@@ -261,7 +261,7 @@ public class LiturgyService {
                 .toList();
         if (groups.isEmpty()) {
             throw new LiturgyUnavailableException(
-                    "A liturgia não possui grupos de leitura para o dia de " + document.date());
+                    "Liturgy has no reading groups for " + document.date());
         }
 
         var fetchedAt = document.fetchedAt() != null ? document.fetchedAt() : document.updatedAt();
@@ -270,7 +270,7 @@ public class LiturgyService {
         }
         if (fetchedAt == null) {
             throw new LiturgyUnavailableException(
-                    "A liturgia não possui data de atualização para o dia de " + document.date());
+                    "Liturgy has no update timestamp for " + document.date());
         }
 
         // A document whose source is unknown must not be served. The previous
@@ -279,7 +279,7 @@ public class LiturgyService {
         // collection before deploying this.
         if (!StringUtils.hasText(document.provider())) {
             throw new LiturgyUnavailableException(
-                    "A liturgia do dia de " + document.date() + " não declara a fonte de origem");
+                    "Liturgy for " + document.date() + " does not declare its source");
         }
 
         return new DailyLiturgy(
