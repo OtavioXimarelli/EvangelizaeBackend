@@ -408,15 +408,6 @@ class CnbbParser:
         value = re.sub(r"\([^)]*\)", " ", value)
         return re.sub(r"[^0-9,.\-]+", "", value)
 
-    @staticmethod
-    def _count_matching_markers(parsed: list[Reading], start: int, reading_type: ReadingType) -> int:
-        count = 0
-        for reading in parsed[start:]:
-            if reading.type is not reading_type:
-                break
-            count += 1
-        return count
-
     def _require_text(self, readings: list[Reading]) -> None:
         """Invariant: no reading and no option may be published without text."""
         for reading in readings:

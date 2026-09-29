@@ -20,7 +20,7 @@ When documents disagree, use this order:
 
 1. This `AGENTS.md` for agent behavior and decisions.
 2. `openapi/evangelizae-v1.openapi.yml` for the public contract (canonical; the frontend mirror is a copy).
-3. `docs/LAUNCH_PLAN_2026-09-28.md` for the current MVP launch plan, its ordering constraints, and its definition of done.
+3. `docs/LAUNCH_PLAN_2026-09-28.md` for the current MVP launch plan, its ordering constraints, and its definition of done. `docs/IMPLEMENTATION_SUMMARY_2026-09-29.md` records what was actually built, the day shapes found, and the fidelity gaps accepted.
 4. `LITURGY_INTEGRATION_PLAN.md` for the delivery plan.
 5. `LITURGY_IMPORT_TECHNICAL.md` for the import path as built.
 6. `CONTRACT_SCRAPER.md` for the ingestion contract.
