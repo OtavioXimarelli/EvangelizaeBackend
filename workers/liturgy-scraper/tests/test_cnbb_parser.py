@@ -51,7 +51,8 @@ def test_parse_sunday():
     assert season.liturgical_year == "A"
     assert len(parts.readings) == 4
     assert parts.readings[2].type == ReadingType.SECOND_READING
-    assert note == "Hoje, omite-se a Festa de Santa Rosa de Lima."
+    # <i> elements are italic scripture quotations, never a liturgical note.
+    assert note is None
 
 
 def test_parse_solemnity():
@@ -76,8 +77,56 @@ def test_parse_alternative_readings():
     assert gospel.text is None
     assert gospel.options is not None
     assert [option.reference for option in gospel.options] == ["Jo 11,19-27", "Lc 10,38-42"]
+    # Only one body follows the marker, so every option carries that text.
     assert gospel.options[0].text == "Texto da primeira opção do evangelho."
-    assert gospel.options[1].text is None
+    assert gospel.options[1].text == "Texto da primeira opção do evangelho."
+
+
+@pytest.mark.parametrize(
+    ("fixture", "target", "expected"),
+    [
+        (
+            "alternative_first_reading_2026-09-29.json",
+            date(2026, 9, 29),
+            ["Dn 7,9-10.13-14", "Ap 12,7-12a"],
+        ),
+        (
+            "alternative_first_reading_2026-12-21.json",
+            date(2026, 12, 21),
+            ["Ct 2,8-14", "Sf 3,14-18a"],
+        ),
+        (
+            "alternative_first_reading_2027-01-25.json",
+            date(2027, 1, 25),
+            ["At 22,3-16", "At 9,1-22"],
+        ),
+    ],
+)
+def test_alternative_first_readings_are_separate_texts(fixture, target, expected):
+    """Two permitted first readings -> two readings, each with its own body.
+
+    These are the three days in a 120-day window that used to produce an empty
+    option and reject the whole batch.
+    """
+    _, _, parts, _ = CnbbParser().parse(_load_fixture(fixture), target)
+
+    first_readings = [
+        reading for reading in parts.readings if reading.type == ReadingType.FIRST_READING
+    ]
+    assert [reading.reference for reading in first_readings] == expected
+    assert all(reading.options is None for reading in first_readings)
+    assert all(reading.text for reading in first_readings)
+    assert len({reading.text for reading in first_readings}) == 2
+
+    gospel = parts.readings[-1]
+    assert gospel.type == ReadingType.GOSPEL
+    # Pins the off-by-one: a naive positional zip shifts every later citation.
+    assert gospel.reference == {
+        date(2026, 9, 29): "Jo 1,47-51",
+        date(2026, 12, 21): "Lc 1,39-45",
+        date(2027, 1, 25): "Mc 16,15-18",
+    }[target]
+    assert gospel.text
 
 
 def test_rejects_wrong_response_date():

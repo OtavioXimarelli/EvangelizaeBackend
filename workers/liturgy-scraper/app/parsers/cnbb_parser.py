@@ -104,7 +104,9 @@ class CnbbParser:
         readings = self._parse_readings(soup)
         if not readings:
             raise ValueError("CNBB response contains no recognizable readings")
-        return celebration, season, LiturgicalParts(readings=readings), self._parse_note(soup)
+        # CNBB's details fragment carries no liturgical note; the <i> elements
+        # in the body are italic scripture quotations, not notes.
+        return celebration, season, LiturgicalParts(readings=readings), None
 
     def _parse_celebration(self, soup: BeautifulSoup) -> Celebration:
         metadata = soup.find(id="cnbb-metadata")
@@ -178,7 +180,7 @@ class CnbbParser:
             if marker_type is None:  # acclamation is a boundary, not an imported reading
                 continue
             end = boundaries[index + 1][0] if index + 1 < len(boundaries) else None
-            parsed.append(self._parse_single_reading(marker, end=end, forced_type=marker_type))
+            parsed.extend(self._parse_single_reading(marker, end=end, forced_type=marker_type))
 
         reference_script = soup.find(id="cnbb-reference-data")
         references: list[str] = []
@@ -190,23 +192,78 @@ class CnbbParser:
             except json.JSONDecodeError:
                 pass
 
-        # The summary follows the same order as the body and contains the book
-        # abbreviation which is omitted from the body's colored verse range.
-        for reading, reference in zip(parsed, references, strict=False):
-            reading.reference = reference
+        result = self._attach_references(parsed, references)
+        self._require_text(result)
+        return result
 
+    def _attach_references(self, parsed: list[Reading], references: list[str]) -> list[Reading]:
+        """Walk the body and the summary together, consuming markers in order.
+
+        The summary lists one citation per reading, but a memorial offering two
+        permitted first readings (``Dn 7,9-10.13-14 ou Ap 12,7-12a``) repeats the
+        ``PRIMEIRA LEITURA`` marker in the body and gives each option its own
+        text. A positional zip would hand the second marker the *next* day's
+        citation and shift every later reading, so alternatives are resolved by
+        consuming as many body markers as the citation names.
+        """
         result: list[Reading] = []
-        for reading in parsed:
-            alternatives = self._split_alternative_references(reading.reference)
+        reading_index = 0
+        for reference in references:
+            if reading_index >= len(parsed):
+                break
+            reading = parsed[reading_index]
+            alternatives = self._split_alternative_references(reference)
             if len(alternatives) < 2:
+                reading.reference = reference
                 result.append(reading)
+                reading_index += 1
                 continue
 
-            first_option = reading.model_copy(update={"reference": alternatives[0]})
-            options = [first_option]
-            options.extend(Reading(type=reading.type, reference=ref) for ref in alternatives[1:])
+            available = self._count_matching_markers(parsed, reading_index, reading.type)
+            if available >= len(alternatives) and available > 1:
+                # Every option has its own body: one reading per alternative.
+                for offset, alternative in enumerate(alternatives):
+                    candidate = parsed[reading_index + offset]
+                    candidate.reference = alternative
+                    result.append(candidate)
+                reading_index += len(alternatives)
+                continue
+
+            # A single body covers every option: keep one group and repeat the text.
+            reading.reference = alternatives[0]
+            options = [Reading(type=reading.type, reference=reading.reference, text=reading.text)]
+            options.extend(
+                Reading(type=reading.type, reference=alternative, text=reading.text)
+                for alternative in alternatives[1:]
+            )
             result.append(Reading(type=reading.type, title=reading.title, options=options))
+            reading_index += 1
+
+        # A summary can be shorter than the body. Never borrow a neighbour's
+        # citation: each leftover reading keeps the citation its own body
+        # carried (the hidden heading or the colored verse range), or none.
+        result.extend(parsed[reading_index:])
         return result
+
+    @staticmethod
+    def _count_matching_markers(parsed: list[Reading], start: int, reading_type: ReadingType) -> int:
+        count = 0
+        for reading in parsed[start:]:
+            if reading.type is not reading_type:
+                break
+            count += 1
+        return count
+
+    def _require_text(self, readings: list[Reading]) -> None:
+        """Invariant: no reading and no option may be published without text."""
+        for reading in readings:
+            candidates = reading.options or [reading]
+            for candidate in candidates:
+                if not candidate.text:
+                    raise ValueError(
+                        f"CNBB returned no text for {reading.type.value} "
+                        f"{candidate.reference or '(no citation)'}"
+                    )
 
     def _parse_single_reading(
         self,
@@ -214,54 +271,70 @@ class CnbbParser:
         *,
         end: Tag | None = None,
         forced_type: ReadingType | None = None,
-    ) -> Reading:
-        """Parse the content following one semantic reading marker."""
+    ) -> list[Reading]:
+        """Parse the content following one semantic reading marker.
+
+        A marker can cover more than one body. 2026-12-21 prints a single
+        ``PRIMEIRA LEITURA`` marker and then two alternative texts, each with its
+        own colored verse range, so the range tags are the real segment
+        boundary. Every segment becomes its own Reading.
+        """
         reading_type = forced_type or self._type_from_text(element.get_text(" ", strip=True))
         if reading_type is None:
             raise ValueError(f"unrecognized CNBB reading marker: {element.get_text(' ', strip=True)!r}")
 
-        reference_tag = self._find_reference_tag(element, end)
-        before_reference = self._strings_between(element, reference_tag or end)
-        after_reference = self._strings_between(reference_tag or element, end)
-        if reference_tag and after_reference:
-            embedded_reference = _clean(reference_tag.get_text(" ", strip=True))
-            if after_reference[0] == embedded_reference:
-                after_reference.pop(0)
+        reference_tags = self._find_reference_tags(element, end)
+        if not reference_tags:
+            reference_tags = [None]
 
-        title = None
-        if reading_type == ReadingType.PSALM:
-            title = "Salmo responsorial"
-        else:
-            title_pattern = re.compile(r"^(?:Leitura|In[ií]cio|Proclama[cç][aã]o)", re.I)
-            title = next((text for text in before_reference if title_pattern.search(text)), None)
+        segments: list[Reading] = []
+        for position, reference_tag in enumerate(reference_tags):
+            segment_end = reference_tags[position + 1] if position + 1 < len(reference_tags) else end
+            segment_start = reference_tags[position - 1] if position else element
+            before_reference = self._strings_between(segment_start, reference_tag or segment_end)
+            after_reference = self._strings_between(reference_tag or element, segment_end)
+            if reference_tag and after_reference:
+                embedded_reference = _clean(reference_tag.get_text(" ", strip=True))
+                if after_reference[0] == embedded_reference:
+                    after_reference.pop(0)
 
-        partial_reference = _clean(reference_tag.get_text(" ", strip=True)) if reference_tag else None
-        hidden_reference = (
-            None if reading_type == ReadingType.PSALM else self._reference_from_hidden_heading(element)
-        )
-        reference = hidden_reference or partial_reference
-        response = (
-            self._extract_response(reference_tag or element, end)
-            if reading_type == ReadingType.PSALM
-            else None
-        )
-        text = _clean(" ".join(after_reference)) or None
+            title = None
+            if reading_type == ReadingType.PSALM:
+                title = "Salmo responsorial"
+            else:
+                title_pattern = re.compile(r"^(?:Leitura|In[ií]cio|Proclama[cç][aã]o)", re.I)
+                title = next(
+                    (text for text in before_reference if title_pattern.search(text)),
+                    segments[-1].title if segments else None,
+                )
 
-        return Reading(
-            type=reading_type,
-            reference=reference,
-            title=title,
-            response=response,
-            text=text,
-        )
-
-    def _parse_note(self, soup: BeautifulSoup) -> str | None:
-        for element in soup.find_all("i"):
-            note = _clean(element.get_text(" ", strip=True))
-            folded = _fold(note)
-            if folded.startswith("hoje") or "omite-se" in folded:
-                return note
-        return None
+            partial_reference = (
+                _clean(reference_tag.get_text(" ", strip=True)) if reference_tag else None
+            )
+            hidden_reference = (
+                None
+                if reading_type == ReadingType.PSALM
+                else self._reference_from_hidden_heading(element)
+            )
+            response = (
+                self._extract_response(reference_tag or element, segment_end)
+                if reading_type == ReadingType.PSALM
+                else None
+            )
+            segments.append(
+                Reading(
+                    type=reading_type,
+                    reference=hidden_reference or partial_reference,
+                    title=title,
+                    response=response,
+                    text=(
+                        _clean(" ".join(after_reference)) or None
+                        if reading_type == ReadingType.PSALM
+                        else self._join_body(after_reference)
+                    ),
+                )
+            )
+        return segments
 
     @staticmethod
     def _extract_summary_references(soup: BeautifulSoup) -> list[str]:
@@ -308,7 +381,9 @@ class CnbbParser:
         return None
 
     @staticmethod
-    def _find_reference_tag(start: Tag, end: Tag | None) -> Tag | None:
+    def _find_reference_tags(start: Tag, end: Tag | None) -> list[Tag]:
+        """Every colored verse range between ``start`` and ``end``, in order."""
+        tags: list[Tag] = []
         for node in start.next_elements:
             if node is end:
                 break
@@ -317,8 +392,18 @@ class CnbbParser:
             color = str(node.get("color", "")).casefold()
             value = _clean(node.get_text(" ", strip=True))
             if color in {"tomato", "#ff6666"} and re.search(r"\d.*,\s*\d", value):
-                return node
-        return None
+                tags.append(node)
+        return tags
+
+    @staticmethod
+    def _join_body(values: list[str]) -> str | None:
+        """Join a body, cutting at the ``Ou:`` divider that introduces the next one."""
+        pieces: list[str] = []
+        for value in values:
+            if _fold(value).rstrip(":").strip() == "ou":
+                break
+            pieces.append(value)
+        return _clean(" ".join(pieces)) or None
 
     @staticmethod
     def _strings_between(start: Tag | None, end: Tag | None) -> list[str]:
