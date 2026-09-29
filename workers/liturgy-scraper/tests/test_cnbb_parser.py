@@ -129,6 +129,71 @@ def test_alternative_first_readings_are_separate_texts(fixture, target, expected
     assert gospel.text
 
 
+def test_optional_readings_block_is_not_todays_liturgy():
+    """2026-11-02 appends a catalogue of readings the day does not use."""
+    _, _, parts, _ = CnbbParser().parse(
+        _load_fixture("optional_readings_2026-11-02.json"), date(2026, 11, 2)
+    )
+
+    assert [reading.reference for reading in parts.readings] == [
+        "Jó 19,1.23-27a",
+        "Sl 23(24),1-2.3-4ab.5-6 (R. cf. 6)",
+        "1Cor 15,20-24a.25-28",
+        "Lc 12,35-40",
+    ]
+    assert all(reading.text for reading in parts.readings)
+
+
+def test_only_the_days_own_mass_is_parsed():
+    """Christmas Day publishes three Masses; the summary names the day Mass."""
+    _, _, parts, _ = CnbbParser().parse(
+        _load_fixture("nested_marker_2026-12-25.json"), date(2026, 12, 25)
+    )
+
+    assert [reading.reference for reading in parts.readings] == [
+        "Is 52,7-10",
+        "Sl 97(98),1.2-3ab.3cd-4.5-6 (R. 3cd)",
+        "Hb 1,1-6",
+        "Jo 1,1-18",
+    ]
+    assert all(reading.text for reading in parts.readings)
+
+
+def test_christmas_eve_publishes_three_masses():
+    _, _, parts, _ = CnbbParser().parse(
+        _load_fixture("multiple_masses_2026-12-24.json"), date(2026, 12, 24)
+    )
+
+    assert [reading.reference for reading in parts.readings] == [
+        "2Sm 7,1-5.8b-12.14a.16",
+        "Sl 88(89),2-3.4-5.27 e 29 (R. 2a)",
+        "Lc 1,67-79",
+    ]
+    assert all(reading.text for reading in parts.readings)
+
+
+def test_easter_sunday_declares_no_season():
+    """CNBB publishes Easter Sunday with an empty title and no season line."""
+    celebration, season, parts, _ = CnbbParser().parse(
+        _load_fixture("easter_sunday_2026-04-05.json"), date(2026, 4, 5)
+    )
+
+    assert celebration.type == CelebrationType.SUNDAY
+    assert celebration.liturgical_color == LiturgicalColor.WHITE
+    # The season falls back to the source's own wording rather than failing the
+    # day: a rejected batch would leave Easter permanently unimported.
+    assert season.name == celebration.name
+    assert season.week is None
+    assert season.liturgical_year == "A"
+    assert [reading.reference for reading in parts.readings] == [
+        "At 10,34a.37-43",
+        "Sl 117(118),1-2.16ab-17.22-23 (R. 24)",
+        "1Cor 5,6b-8",
+        "Jo 20,1-9",
+    ]
+    assert all(reading.text for reading in parts.readings)
+
+
 def test_rejects_wrong_response_date():
     with pytest.raises(ValueError, match="returned 2026-08-25"):
         CnbbParser().parse(_load_fixture("normal_day.json"), date(2026, 8, 26))
