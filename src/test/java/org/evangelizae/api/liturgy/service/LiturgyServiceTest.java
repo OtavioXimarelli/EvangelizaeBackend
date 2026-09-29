@@ -156,6 +156,23 @@ class LiturgyServiceTest {
     }
 
     @Test
+    void returnsUnavailableWhenTheProviderIsMissing() {
+        // The API must never serve a document whose source is unknown. The old
+        // fallback labelled it "mongodb", which the UI showed as the source.
+        var document = document(
+                LocalDate.parse("2026-09-23"),
+                List.of(persistedReading("FIRST_READING", "Primeira leitura")),
+                Instant.parse("2026-09-24T01:30:00Z"),
+                null
+        );
+        when(repository.findByDate(LocalDate.parse("2026-09-23"))).thenReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> service().getToday("America/Sao_Paulo", "pt-BR"))
+                .isInstanceOf(LiturgyUnavailableException.class)
+                .hasMessageContaining("fonte de origem");
+    }
+
+    @Test
     void rejectsUnsupportedLocales() {
         assertThatThrownBy(() -> service().getToday("America/Sao_Paulo", "en-US"))
                 .isInstanceOf(InvalidLiturgyRequestException.class)
@@ -207,6 +224,15 @@ class LiturgyServiceTest {
             List<LiturgicalDayDocument.Reading> readings,
             Instant fetchedAt
     ) {
+        return document(date, readings, fetchedAt, "CNBB");
+    }
+
+    private static LiturgicalDayDocument document(
+            LocalDate date,
+            List<LiturgicalDayDocument.Reading> readings,
+            Instant fetchedAt,
+            String provider
+    ) {
         return new LiturgicalDayDocument(
                 date.toString(),
                 date,
@@ -221,7 +247,7 @@ class LiturgyServiceTest {
                 "0.1.0",
                 NOW.minusSeconds(60),
                 CONTENT_HASH,
-                "CNBB",
+                provider,
                 fetchedAt,
                 NOW.minusSeconds(3600),
                 NOW,

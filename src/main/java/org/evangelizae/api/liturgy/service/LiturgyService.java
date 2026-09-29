@@ -273,6 +273,15 @@ public class LiturgyService {
                     "A liturgia não possui data de atualização para o dia de " + document.date());
         }
 
+        // A document whose source is unknown must not be served. The previous
+        // fallback labelled it "mongodb", which the UI would then present to the
+        // user as the liturgical source. 503 is the honest answer; reconcile the
+        // collection before deploying this.
+        if (!StringUtils.hasText(document.provider())) {
+            throw new LiturgyUnavailableException(
+                    "A liturgia do dia de " + document.date() + " não declara a fonte de origem");
+        }
+
         return new DailyLiturgy(
                 document.date(),
                 document.title(),
@@ -280,7 +289,7 @@ public class LiturgyService {
                 new LiturgyPrayers(null, null, null),
                 groups,
                 new LiturgySource(
-                        document.provider() != null ? document.provider() : "mongodb",
+                        document.provider(),
                         fetchedAt,
                         LiturgySource.Freshness.LIVE)
         );
