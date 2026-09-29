@@ -104,7 +104,7 @@ current designed behaviour, not a defect.
 
 ## 6. Phases
 
-### Phase 0 — Commit what exists (10 min)
+### Phase 0 — Commit what exists (10 min) — **done** (`109e037`)
 
 Everything from this session is uncommitted and the scraper was outside version
 control entirely. Commit first.
@@ -114,7 +114,7 @@ git add -A
 git commit -m "feat: package VPS Docker stack, fix MONGODB_URI, scraper timezone"
 ```
 
-### Phase 1 — Parser: alternative readings (~2h, critical path)
+### Phase 1 — Parser: alternative readings (~2h, critical path) — **done** (`d96d750`, `44cb237`)
 
 `workers/liturgy-scraper/app/parsers/cnbb_parser.py:195` — replace
 `zip(parsed, references, strict=False)` with a consumption-based walk:
@@ -140,7 +140,26 @@ breaks again around 21 Dec and 25 Jan.
 
 Also delete the note heuristic (`cnbb_parser.py:258-264`, see 3.3).
 
-### Phase 2 — Guard the batch (~1h)
+**Deviation from the plan, recorded here because the plan's 2.5% figure was
+wrong.** 2026-12-21 does not repeat the `PRIMEIRA LEITURA` marker; it prints one
+marker and two colored verse ranges under it, so the range tags — not the
+markers — are the real body boundary. A 400-day sweep (2026-01-01 → 2027-02-04)
+then found three more shapes the plan did not anticipate, all of which reject the
+whole batch:
+
+| Date | Shape | Failure |
+|---|---|---|
+| 2026-12-24, 2026-12-25 | Three Masses in one body, each repeating every reading marker | Readings from the wrong Mass published; Gospel mismatched |
+| 2026-11-02 | `Outras leituras próprias à escolha` catalogue appended to All Souls | Optional readings published as the day's |
+| 2026-04-05 | Easter Sunday published with an empty `title` and no season line | `could not identify the CNBB liturgical season` — a permanent 503 on Easter |
+
+CNBB also marks these headings up three different ways (a `<center>` nested in
+the red `<font>`, a bare `<font>` with an empty `<center>` beside it, and the
+Mass name left inside the marker's own `<center>`), and its HTML is unbalanced
+around them, so the section boundary has to be found in the parse tree. Fixed in
+`44cb237`; all three dates are now fixtures.
+
+### Phase 2 — Guard the batch (~1h) — **done** (`091adcc`)
 
 - Pre-POST assertion that every reading in every day has non-empty text; abort
   rather than send a day the backend will reject.
@@ -150,7 +169,7 @@ Also delete the note heuristic (`cnbb_parser.py:258-264`, see 3.3).
 - Add `SCRAPER_DAYS_BEHIND` support at `main.py:74-75`.
 - Gate: 120-day scan green, 120/120, no `EMPTY-OPT`, no `EMPTY-TEXT`.
 
-### Phase 3 — Scraper reliability (~2h)
+### Phase 3 — Scraper reliability (~2h) — **done** (`091adcc`, `a6c73d6`)
 
 In `services/scraper_service.py` and `main.py`:
 
@@ -167,7 +186,7 @@ In `services/scraper_service.py` and `main.py`:
 
 Exit `0` / `1` already works; verified.
 
-### Phase 4 — Backend contract and stack (~1h)
+### Phase 4 — Backend contract and stack (~1h) — **done** (`bb593e8`)
 
 - `LiturgyService:283` — remove the `"mongodb"` fallback (see 3.4). **Deploy only
   after reconciliation.**
@@ -175,7 +194,12 @@ Exit `0` / `1` already works; verified.
   Keep `caddy`: it is what blocks `/internal/*` and terminates TLS.
 - Add `.github/workflows/ci.yml` running `./mvnw test` and `uv run pytest`.
 
-### Phase 5 — Reconcile, deploy, schedule (~1.5h)
+The `web` service and its build args were already gone in `109e037`; only a
+stale comment referencing it remained. CI additionally mutates the Mongo
+property key to prove `MongoConnectionPropertiesTest` can still fail — a
+regression test that cannot fail is not a test.
+
+### Phase 5 — Reconcile, deploy, schedule (~1.5h) — **not started**
 
 1. Inspect production `liturgical_days` for non-date-keyed `_id`s
    (`LITURGY_INTEGRATION_PLAN.md:419-429`); convert or recreate the collection.
@@ -187,22 +211,70 @@ Exit `0` / `1` already works; verified.
 5. Confirm `GET /api/v1/liturgy/today` in production and CORS from the real
    frontend origin.
 
+Steps 1 and 3 are the ordering constraint in §4.1 and are not optional: the
+strict provider read path in `bb593e8` is already on this branch, and shipping it
+against an unreconciled collection takes `/pt/liturgy` dark.
+
+
 ## 7. Definition of done
 
-- [ ] 120-day scan: 120/120, no `EMPTY-OPT`, no `EMPTY-TEXT`
-- [ ] Fixtures cover all three broken dates, including the Gospel-citation
+- [x] 120-day scan: 120/120, no `EMPTY-OPT`, no `EMPTY-TEXT`
+- [x] 400-day scan (2026-01-01 → 2027-02-04): 400/400, no `EMPTY-TEXT`
+- [x] Fixtures cover all three broken dates, including the Gospel-citation
       assertion
-- [ ] 21-day import returns `SUCCESS` with `processed == 21`
-- [ ] Re-import leaves the document count unchanged
+- [ ] 21-day import returns `SUCCESS` with `processed == 21` — needs a live API
+- [ ] Re-import leaves the document count unchanged — needs a live API
 - [ ] Public GET returns `freshness: LIVE`, `provider: CNBB`, every reading
-      non-empty
-- [ ] No document can be served with a missing or `mongodb` provider
-- [ ] Scraper exits `0` on success and `1` on any failure, retries
+      non-empty — needs production
+- [x] No document can be served with a missing or `mongodb` provider
+- [x] Scraper exits `0` on success and `1` on any failure, retries
       429/5xx/timeout, logs `X-Request-Id` and `importId`
-- [ ] 17 backend and 19 scraper tests green, both in CI
+- [x] Backend and scraper tests green (18 + 36), both wired into CI
 - [ ] `compose.yml` starts clean from a fresh clone with only `.env` populated
 - [ ] Mongo authentication on, no host port, no volume loss on `up -d`
+- [ ] Production collection reconciled before the strict provider path ships
 - [ ] Daily job green for 7 consecutive days
+
+The unchecked items all need a running stack or production access; they are
+Phase 5.
+
+### 7.1 The scan is a gate, not a one-off
+
+A 120-day window from any given date will not contain 2026-11-02, 2026-12-24,
+2026-12-25 or 2026-04-05. The plan's gate therefore passes on a window that still
+contains four unparseable days. The only sweep that exercises a full liturgical
+year is the 400-day one, and it is what caught these. Rerun it before any change
+to `cnbb_parser.py`:
+
+```bash
+cd workers/liturgy-scraper
+uv run python - <<'PY'
+import logging
+from datetime import date, timedelta
+import httpx
+from app.parsers.cnbb_parser import CnbbParser
+from app.sources.cnbb import CnbbSource
+
+logging.disable(logging.CRITICAL)
+client = httpx.Client(timeout=30, follow_redirects=True,
+                      headers={"User-Agent": "LiturgyScraper/0.1.0"})
+cnbb, parser = CnbbSource(client), CnbbParser()
+start, failures = date(2026, 1, 1), 0
+for offset in range(400):
+    day = start + timedelta(days=offset)
+    try:
+        parser.parse(cnbb.fetch_html(day), day)
+    except Exception as error:
+        failures += 1
+        print(f"FAIL {day} {type(error).__name__}: {error}")
+print(f"{400 - failures}/400 parsed")
+raise SystemExit(1 if failures else 0)
+PY
+```
+
+It needs network access to CNBB, so it cannot run in CI. It must run by hand
+before a deploy that touches the parser.
+
 
 ## 8. Out of scope
 

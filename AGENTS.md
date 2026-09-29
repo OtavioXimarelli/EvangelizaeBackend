@@ -33,7 +33,7 @@ When documents disagree, use this order:
 Two constraints in the launch plan are not stylistic. Reversing either causes an outage:
 
 1. **Reconcile the production `liturgical_days` collection before deploying any change that makes a missing `provider` fatal.** The API must never serve a document whose source is unknown, so a document without `provider` returns `503`. Ship that first against an unreconciled database and `/pt/liturgy` goes dark.
-2. **The scraper must parse alternative readings before any windowed run.** Roughly 2.5% of liturgical days (2026-09-29, 2026-12-21, 2027-01-25 — all memorials with two permitted first readings) currently produce a reading with no text. The import request is validated in full before anything is written, so one such day rejects the whole batch and imports nothing.
+2. **The scraper must parse every day shape CNBB publishes before any windowed run.** One unparseable day rejects the whole batch, because the import request is validated in full before anything is written. The shapes that once broke it: memorials with two permitted first readings (2026-09-29, 2026-12-21, 2027-01-25), days that publish several Masses in one body (2026-12-24, 2026-12-25), All Souls with its `Outras leituras próprias à escolha` catalogue (2026-11-02), and Easter Sunday with no season label at all (2026-04-05). All are fixtures now. A 120-day window will not contain them, so the gate is a 400-day sweep — see `docs/LAUNCH_PLAN_2026-09-28.md` §7.1.
 
 ## Liturgical text sourcing — decided
 
