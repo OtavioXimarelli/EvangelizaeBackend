@@ -173,11 +173,6 @@ class CnbbParser:
         found = [self._verse_key(reading.reference or "") for reading in readings]
         return sum(1 for key in wanted if key and any(key in item for item in found))
 
-    @staticmethod
-    def _verse_key(reference: str) -> str:
-        """Comparable form of a citation: digits and separators only."""
-        return re.sub(r"[^0-9,.\-]+", "", reference)
-
     def _parse_celebration(self, soup: BeautifulSoup) -> Celebration:
         metadata = soup.find(id="cnbb-metadata")
         color_text = str(metadata.get("data-color", "")) if metadata else ""
@@ -266,7 +261,8 @@ class CnbbParser:
                 pass
 
         section_of, end_of = self._section_plan(soup, [tag for tag, _ in boundaries])
-        result = self._parse_section(boundaries, section_of, end_of, references)
+        bodies = self._parse_section(boundaries, section_of, end_of, references)
+        result = self._attach_references(bodies, references)
         self._require_text(result)
         return result
 
@@ -282,30 +278,28 @@ class CnbbParser:
         for position in range(len(boundaries)):
             by_section.setdefault(section_of.get(position, 0), []).append(position)
         if len(by_section) < 2:
-            return self._parse_markers(boundaries, references, None, {})
+            return self._parse_bodies(boundaries, None, {})
 
         wanted = [self._verse_key(reference) for reference in references]
         scored = [
             (
-                self._section_score(
-                    wanted, self._parse_markers(boundaries, [], positions, end_of)
-                ),
+                self._section_score(wanted, self._parse_bodies(boundaries, positions, end_of)),
                 positions,
             )
             for positions in by_section.values()
         ]
         best_score, best = max(scored, key=lambda item: item[0])
         if not best_score:
-            return self._parse_markers(boundaries, references, None, {})
-        return self._parse_markers(boundaries, references, best, end_of)
+            return self._parse_bodies(boundaries, None, {})
+        return self._parse_bodies(boundaries, best, end_of)
 
-    def _parse_markers(
+    def _parse_bodies(
         self,
         boundaries: list[tuple[Tag, ReadingType | None]],
-        references: list[str],
         positions: list[int] | None = None,
         end_of: dict[int, NavigableString] | None = None,
     ) -> list[Reading]:
+        """Read the body, leaving each reading's citation as the body printed it."""
         selected = list(range(len(boundaries))) if positions is None else list(positions)
         parsed: list[Reading] = []
         for index, position in enumerate(selected):
@@ -317,56 +311,102 @@ class CnbbParser:
             if end_of and position in end_of:
                 end = end_of[position]
             parsed.extend(self._parse_single_reading(marker, end=end, forced_type=marker_type))
-        return self._attach_references(parsed, references)
+        return parsed
 
     def _attach_references(self, parsed: list[Reading], references: list[str]) -> list[Reading]:
-        """Walk the body and the summary together, consuming markers in order.
+        """Pair each summary citation with the body reading that carries it.
 
-        The summary lists one citation per reading, but a memorial offering two
-        permitted first readings (``Dn 7,9-10.13-14 ou Ap 12,7-12a``) repeats the
-        ``PRIMEIRA LEITURA`` marker in the body and gives each option its own
-        text. A positional zip would hand the second marker the *next* day's
-        citation and shift every later reading, so alternatives are resolved by
-        consuming as many body markers as the citation names.
+        The summary is the authority on which readings the day has, and the body
+        routinely contains more: Holy Saturday (2026-04-04) prints the Easter
+        Vigil, whose seven readings and psalms share a body with the readings of
+        the Masses that follow. Walking the two lists positionally would publish
+        whichever readings happened to land on the right slot, so each citation
+        is matched against the body readings that quote it and everything the
+        summary does not name is dropped.
+
+        A citation naming N alternatives may be backed by N bodies, each with its
+        own text, or by one body that serves every option. The first becomes N
+        separate readings; the second becomes one group of options.
         """
         result: list[Reading] = []
-        reading_index = 0
+        cursor = 0
         for reference in references:
-            if reading_index >= len(parsed):
-                break
-            reading = parsed[reading_index]
             alternatives = self._split_alternative_references(reference)
-            if len(alternatives) < 2:
-                reading.reference = reference
-                result.append(reading)
-                reading_index += 1
+            claimed, cursor = self._claim(parsed, alternatives, cursor)
+            if not claimed:
+                # CNBB does not always write the same citation in the summary and
+                # the body - All Souls (2026-11-02) names "Sl 23(24),1-2.3-4ab.5-6"
+                # where the body prints "Sl 22(23),1-3.4.5.6". The order still
+                # agrees, so the next unclaimed reading is the one intended; the
+                # citation published is the summary's, not the body's.
+                if cursor < len(parsed):
+                    reading = parsed[cursor]
+                    reading.reference = reference
+                    result.append(reading)
+                    cursor += 1
                 continue
 
-            available = self._count_matching_markers(parsed, reading_index, reading.type)
-            if available >= len(alternatives) and available > 1:
-                # Every option has its own body: one reading per alternative.
-                for offset, alternative in enumerate(alternatives):
-                    candidate = parsed[reading_index + offset]
-                    candidate.reference = alternative
-                    result.append(candidate)
-                reading_index += len(alternatives)
-                continue
-
-            # A single body covers every option: keep one group and repeat the text.
-            reading.reference = alternatives[0]
-            options = [Reading(type=reading.type, reference=reading.reference, text=reading.text)]
-            options.extend(
-                Reading(type=reading.type, reference=alternative, text=reading.text)
-                for alternative in alternatives[1:]
-            )
-            result.append(Reading(type=reading.type, title=reading.title, options=options))
-            reading_index += 1
-
-        # A summary can be shorter than the body. Never borrow a neighbour's
-        # citation: each leftover reading keeps the citation its own body
-        # carried (the hidden heading or the colored verse range), or none.
-        result.extend(parsed[reading_index:])
+            if len(claimed) == len(alternatives):
+                for reading, alternative in zip(claimed, alternatives):
+                    reading.reference = alternative
+                    result.append(reading)
+            else:
+                # One body covers every option: repeat its text for each.
+                reading = claimed[0]
+                result.append(
+                    Reading(
+                        type=reading.type,
+                        title=reading.title,
+                        options=[
+                            Reading(type=reading.type, reference=alternative, text=reading.text)
+                            for alternative in alternatives
+                        ],
+                    )
+                )
         return result
+
+    def _claim(
+        self, parsed: list[Reading], alternatives: list[str], cursor: int
+    ) -> tuple[list[Reading], int]:
+        """Body readings from `cursor` on, in order, that quote these citations."""
+        claimed: list[Reading] = []
+        for alternative in alternatives:
+            for index in range(cursor, len(parsed)):
+                if self._quotes(parsed[index].reference, alternative):
+                    claimed.append(parsed[index])
+                    cursor = index + 1
+                    break
+            else:
+                break
+        return claimed, cursor
+
+    def _quotes(self, body_citation: str | None, summary_citation: str) -> bool:
+        """Whether a body's colored verse range is the citation the summary names.
+
+        The body omits the book abbreviation the summary carries, and the two
+        disagree on how an alternate chapter number is written ("Sl 117,1-2" vs
+        "Sl 117(118),1-2"), so both sides are reduced to chapter and verses with
+        the refrain and the alternate-number parentheses removed. A summary line
+        may also name a reading and its psalm together ("Rm 6,3-11
+        Sl 117(118),1-2"), in which case the reading's range is contained in it.
+        """
+        if not body_citation:
+            return False
+        body = self._verse_key(body_citation)
+        summary = self._verse_key(summary_citation)
+        return bool(body) and bool(summary) and (body in summary or summary in body)
+
+    @staticmethod
+    def _verse_key(reference: str) -> str:
+        """Comparable form of a citation: chapter and verses, digits only.
+
+        Drops the book, the psalm refrain ("(R. 3cd)"), and any parenthesised
+        alternate chapter number, so that the body's colored range and the
+        summary's citation reduce to the same string.
+        """
+        value = re.sub(r"\(\s*R[.:].*?\)", " ", reference, flags=re.I)
+        value = re.sub(r"\([^)]*\)", " ", value)
+        return re.sub(r"[^0-9,.\-]+", "", value)
 
     @staticmethod
     def _count_matching_markers(parsed: list[Reading], start: int, reading_type: ReadingType) -> int:
@@ -470,7 +510,11 @@ class CnbbParser:
             segments.append(
                 Reading(
                     type=reading_type,
-                    reference=hidden_reference or partial_reference,
+                    # The colored verse range identifies this body; the hidden
+                    # heading can name an earlier reading (Easter Sunday's Gospel
+                    # inherits "1Cor 5,6"). Only matching uses this, and the
+                    # published citation comes from the day's summary.
+                    reference=partial_reference or hidden_reference,
                     title=title,
                     response=response,
                     text=(
@@ -497,8 +541,12 @@ class CnbbParser:
                 return references
         return []
 
+    # A heading may carry a qualifier: the Easter Vigil (2026-04-04) prints
+    # "PRIMEIRA LEITURA (mais longa)" and "SEGUNDA LEITURA (mais longa)".
     _READING_MARKER = re.compile(
-        r"^(?:missa\s+.*?\s+)?(primeira leitura|1a leitura|leitura|segunda leitura|2a leitura|evangelho)$"
+        r"^(?:missa\s+.*?\s+)?"
+        r"(primeira leitura|1a leitura|leitura|segunda leitura|2a leitura|evangelho)"
+        r"(?:\s*\([^)]*\))?$"
     )
     _READING_MARKER_TYPES = {
         "primeira leitura": ReadingType.FIRST_READING,

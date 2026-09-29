@@ -145,9 +145,9 @@ def test_optional_readings_block_is_not_todays_liturgy():
 
 
 def test_only_the_days_own_mass_is_parsed():
-    """Christmas Day publishes three Masses; the summary names the day Mass."""
+    """Christmas Day publishes several Masses; the summary names the day Mass."""
     _, _, parts, _ = CnbbParser().parse(
-        _load_fixture("nested_marker_2026-12-25.json"), date(2026, 12, 25)
+        _load_fixture("multiple_masses_2026-12-25.json"), date(2026, 12, 25)
     )
 
     assert [reading.reference for reading in parts.readings] == [
@@ -168,6 +168,25 @@ def test_christmas_eve_publishes_three_masses():
         "2Sm 7,1-5.8b-12.14a.16",
         "Sl 88(89),2-3.4-5.27 e 29 (R. 2a)",
         "Lc 1,67-79",
+    ]
+    assert all(reading.text for reading in parts.readings)
+
+
+def test_easter_vigil_publishes_only_its_own_readings():
+    """2026-04-04 shares its body with the readings of the Masses that follow.
+
+    The body carries seven numbered readings, each with a psalm, and only four
+    of them are the Vigil's. A positional walk published fifteen of them.
+    """
+    _, _, parts, _ = CnbbParser().parse(
+        _load_fixture("easter_vigil_2026-04-04.json"), date(2026, 4, 4)
+    )
+
+    assert [reading.reference for reading in parts.readings] == [
+        "Gn 1,1-2,2",
+        "Sl 103(104),1-2a.5-6.10.12.13-14.24.35c (R. cf. 30)",
+        "Rm 6,3-11 Sl 117(118) 1-2.16ab-17.22-23",
+        "Evangelho: Mt 28,1-10",
     ]
     assert all(reading.text for reading in parts.readings)
 
