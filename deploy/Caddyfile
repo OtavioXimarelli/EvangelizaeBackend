@@ -1,0 +1,44 @@
+{
+	email {$ACME_EMAIL}
+}
+
+// {$SITE_DOMAIN} gets an automatic Let's Encrypt certificate once DNS for the
+// domain points at this host and ports 80/443 are reachable.
+{$SITE_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	// The scraper's import endpoint is never routed. This is the second of two
+	// independent barriers: the api service also publishes no host port, so the
+	// only clients able to reach /internal/* are the scraper and this proxy —
+	// and the proxy refuses. Blocked here regardless of bearer token.
+	@internal path /internal/* /actuator/*
+	respond @internal 404
+
+	// Public product surface: /api/v1/liturgy/today and /api/v1/health.
+	handle /api/* {
+		reverse_proxy api:8080 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	// Everything else is the Next.js frontend. Note the web container has its own
+	// /api/health route for its Docker HEALTHCHECK; that check runs inside the
+	// container against 127.0.0.1:3000 and never traverses this proxy.
+	handle {
+		reverse_proxy web:3000
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

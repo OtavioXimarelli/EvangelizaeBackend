@@ -81,7 +81,7 @@ Valores aceitos:
 - `color`: `GREEN`, `WHITE`, `RED`, `PURPLE`, `ROSE`
 - `kind`: `FIRST_READING`, `PSALM`, `SECOND_READING`, `GOSPEL`, `EXTRA`
 
-Nenhum texto catolico e embutido como fallback. A escolha da fonte, sua autorizacao de uso e o mapeamento do formato original devem ser definidos antes de habilitar producao.
+Nenhum texto catolico e embutido como fallback. A fonte esta definida: CNBB / Edicoes CNBB - Igreja em Oracao como fonte primaria do calendario e do texto, com Vatican News - Palavra do Dia como validacao best-effort. A redistribuicao dos textos liturgicos foi aprovada pelo responsavel do projeto em 2026-09-28 e nao exige licenca formal nem pedido de permissao. Ver `AGENTS.md`.
 
 ## Configuracao de producao
 

@@ -143,6 +143,11 @@ When triggered (e.g., via weekly cron at `0 3 * * 0`), the scraper executes the 
 
 #### Sub-Model: `Reading`
 > **Invariant**: A reading has either `text` (standard single reading) or `options` (alternative reading choices), **never both**.
+>
+> **Invariant**: Every reading and every option carries non-empty `text`. A day
+> that cannot satisfy this is a parser failure, not a partial import: the import
+> request is validated in full before anything is written, so one such day
+> rejects the whole batch.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `type` | `ReadingType` (Enum) | Yes | `FIRST_READING`, `SECOND_READING`, `PSALM`, `GOSPEL`, `ACCLAMATION`, `SEQUENCE`. |

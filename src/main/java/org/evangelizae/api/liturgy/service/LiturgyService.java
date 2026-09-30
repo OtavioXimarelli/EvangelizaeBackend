@@ -59,7 +59,7 @@ public class LiturgyService {
         return repository.findByDate(date)
                 .map(this::toDailyLiturgy)
                 .orElseThrow(() -> new LiturgyUnavailableException(
-                        "A liturgia não está disponível para o dia de " + date));
+                        "Liturgy is not available for " + date));
     }
 
     public LiturgyImportResponse importBatch(LiturgyImportRequest request) {
@@ -252,7 +252,7 @@ public class LiturgyService {
         var readings = document.readings();
         if (readings == null || readings.isEmpty()) {
             throw new LiturgyUnavailableException(
-                    "A liturgia não possui leituras para o dia de " + document.date());
+                    "Liturgy has no readings for " + document.date());
         }
 
         var groups = Arrays.stream(ReadingKind.values())
@@ -261,7 +261,7 @@ public class LiturgyService {
                 .toList();
         if (groups.isEmpty()) {
             throw new LiturgyUnavailableException(
-                    "A liturgia não possui grupos de leitura para o dia de " + document.date());
+                    "Liturgy has no reading groups for " + document.date());
         }
 
         var fetchedAt = document.fetchedAt() != null ? document.fetchedAt() : document.updatedAt();
@@ -270,7 +270,16 @@ public class LiturgyService {
         }
         if (fetchedAt == null) {
             throw new LiturgyUnavailableException(
-                    "A liturgia não possui data de atualização para o dia de " + document.date());
+                    "Liturgy has no update timestamp for " + document.date());
+        }
+
+        // A document whose source is unknown must not be served. The previous
+        // fallback labelled it "mongodb", which the UI would then present to the
+        // user as the liturgical source. 503 is the honest answer; reconcile the
+        // collection before deploying this.
+        if (!StringUtils.hasText(document.provider())) {
+            throw new LiturgyUnavailableException(
+                    "Liturgy for " + document.date() + " does not declare its source");
         }
 
         return new DailyLiturgy(
@@ -280,7 +289,7 @@ public class LiturgyService {
                 new LiturgyPrayers(null, null, null),
                 groups,
                 new LiturgySource(
-                        document.provider() != null ? document.provider() : "mongodb",
+                        document.provider(),
                         fetchedAt,
                         LiturgySource.Freshness.LIVE)
         );

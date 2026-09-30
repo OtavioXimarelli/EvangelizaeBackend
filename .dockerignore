@@ -1,7 +1,21 @@
 .git
+.gitignore
 .idea
 .vscode
+*.iml
+.classpath
+.project
+.settings
+.DS_Store
 target
 *.log
 .env
+.env.*
+!.env.example
 
+# The Python worker has its own image and build context.
+workers/
+deploy/
+diagrams/
+*.md
+!README.md

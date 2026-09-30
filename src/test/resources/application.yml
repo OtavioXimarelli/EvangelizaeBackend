@@ -2,9 +2,11 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+  mongodb:
+    uri: mongodb://localhost:27017/evangelizae-test
   data:
     mongodb:
-      uri: mongodb://localhost:27017/evangelizae-test
+      database: evangelizae-test
 
 app:
   cors:

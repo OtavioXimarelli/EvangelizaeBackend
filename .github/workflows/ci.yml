@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref: a push while a PR is queued makes the
+# old result irrelevant, and a green badge on stale code is worse than none.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: api (mvnw test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      # The wrapper pins Maven itself, so no setup-maven step is needed.
+      - name: The MONGODB_URI regression test must fail on the old property key
+        # Spring Boot 4 renamed spring.data.mongodb.uri to spring.mongodb.uri,
+        # and the driver silently falls back to the default host when the key is
+        # wrong. A test that cannot fail is not a test, so prove it can.
+        run: |
+          cp src/test/resources/application.yml "$RUNNER_TEMP/application.yml"
+          cat > /tmp/old-key.py <<'PY'
+          import pathlib
+
+          path = pathlib.Path("src/test/resources/application.yml")
+          path.write_text(
+              path.read_text().replace(
+                  "  mongodb:\n    uri: mongodb://localhost:27017/evangelizae-test\n"
+                  "  data:\n    mongodb:\n      database: evangelizae-test\n",
+                  "  data:\n    mongodb:\n"
+                  "      uri: mongodb://localhost:27017/evangelizae-test\n"
+                  "      database: evangelizae-test\n",
+              )
+          )
+          PY
+          python3 /tmp/old-key.py
+          if ./mvnw -B test -Dtest=MongoConnectionPropertiesTest; then
+            echo "::error::MongoConnectionPropertiesTest passes with the pre-Boot-4 key"
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/application.yml" src/test/resources/application.yml
+      - run: ./mvnw -B test
+
+  scraper:
+    name: scraper (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/liturgy-scraper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: workers/liturgy-scraper/pyproject.toml
+      - run: uv sync --frozen --dev
+      - run: uv run pytest -q

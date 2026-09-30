@@ -50,10 +50,10 @@ This document defines the complete technical contract between the **LiturgyScrap
 
 ## 2. Operational Pipeline (How the App Works)
 
-When triggered (e.g., via weekly cron at `0 3 * * 0`), the scraper executes the following sequential pipeline:
+When triggered (e.g., via daily cron at `23 4 * * *`), the scraper executes the following sequential pipeline:
 
 ```text
-1. Date Range Generation (start = today, end = today + 13 days)
+1. Date Range Generation (start = today - 7, end = today + 13 days)
        │
        ▼
 2. Per-Day Processing Loop:
@@ -612,5 +612,7 @@ public class LiturgyImportService {
 | `LITURGY_IMPORT_URL` | `http://localhost:8080/internal/v1/liturgy/import` | Spring Boot batch receiver URL. |
 | `LITURGY_IMPORT_TOKEN` | *(Required)* | Secret Bearer authentication token. |
 | `SCRAPER_DAYS_AHEAD` | `14` | Number of days ahead from today to scrape. |
+| `SCRAPER_DAYS_BEHIND` | `7` | Days before today to re-scrape, so a missed run heals itself. |
+| `SCRAPER_TIMEZONE` | `America/Sao_Paulo` | IANA zone the liturgical day is defined in. |
 | `HTTP_TIMEOUT_SECONDS` | `30` | HTTP request timeout in seconds. |
 | `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
