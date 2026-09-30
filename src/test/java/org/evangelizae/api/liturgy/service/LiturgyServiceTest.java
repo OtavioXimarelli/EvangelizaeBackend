@@ -169,7 +169,7 @@ class LiturgyServiceTest {
 
         assertThatThrownBy(() -> service().getToday("America/Sao_Paulo", "pt-BR"))
                 .isInstanceOf(LiturgyUnavailableException.class)
-                .hasMessageContaining("fonte de origem");
+                .hasMessageContaining("does not declare its source");
     }
 
     @Test

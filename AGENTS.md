@@ -1,6 +1,31 @@
 # Evangelizae API agent guide
 
-This file is the canonical operating guide for coding agents working on the backend. The frontend repository has its own `AGENTS.md`; the two are companions, not duplicates.
+This file is the canonical operating guide for coding agents working on the backend. The frontend and scraper repositories have their own `AGENTS.md` files; the three are companions, not duplicates.
+
+## Repository independence
+
+This repository is **one of three independent deployable units**:
+
+| Repository | Purpose | Deploy target |
+|---|---|---|
+| `EvangelizaeBackend` (this repo) | Serve liturgy, validate imports, store documents | Coolify Docker resource |
+| `liturgy-scraper` | Fetch CNBB HTML, parse, POST to backend | Coolify Scheduled Job |
+| `Evangelizae` (frontend) | Render UI, cache responses, PWA | Coolify Docker resource |
+
+**Each repository:**
+- Has its own lifecycle, CI, and deployment
+- Can be deployed independently without touching the others
+- Has its own test suite that must pass before deploy
+- Owns its own Dockerfile and environment variables
+
+**The contract binds them:** `openapi/evangelizae-v1.openapi.yml` in this repo is the canonical API contract. The frontend has a mirror copy. The scraper implements the import side. Changing the contract requires coordinated updates across repos, but day-to-day development is independent.
+
+**Agents working on this repo must:**
+- Never assume the scraper or frontend code is in this repository
+- Never modify scraper or frontend code from this repo
+- Treat the OpenAPI spec as the boundary — if it doesn't change, the other repos don't need to
+- Run only this repo's test suite (`./mvnw test`) to validate changes
+- Deploy only this repo's Docker image to Coolify
 
 ## What this service is
 
@@ -20,13 +45,14 @@ When documents disagree, use this order:
 
 1. This `AGENTS.md` for agent behavior and decisions.
 2. `openapi/evangelizae-v1.openapi.yml` for the public contract (canonical; the frontend mirror is a copy).
-3. `docs/LAUNCH_PLAN_2026-09-28.md` for the current MVP launch plan, its ordering constraints, and its definition of done. `docs/IMPLEMENTATION_SUMMARY_2026-09-29.md` records what was actually built, the day shapes found, and the fidelity gaps accepted.
-4. `LITURGY_INTEGRATION_PLAN.md` for the delivery plan.
-5. `LITURGY_IMPORT_TECHNICAL.md` for the import path as built.
-6. `CONTRACT_SCRAPER.md` for the ingestion contract.
-7. `README.md` for local operation and production configuration.
-8. Current code and tests for actual behavior.
-9. `ARCHITECTURE.md`, `ARCHITECTURE_EBOOK.md`, `SYSTEM_DESIGN.md`, `VISUAL_ARCHITECTURE.md` as **historical or aspirational context only**. These describe Redis, hexagonal ports/adapters, weekly cron, a `liturgical_day_versions` collection, and a `HttpLiturgyProvider` pull-mode that were all deliberately removed. Do not implement from them and do not treat them as current.
+3. `docs/CROSS_REPO_COORDINATION.md` for rules governing changes that span multiple repos.
+4. `docs/LAUNCH_PLAN_2026-09-28.md` for the current MVP launch plan, its ordering constraints, and its definition of done. `docs/IMPLEMENTATION_SUMMARY_2026-09-29.md` records what was actually built, the day shapes found, and the fidelity gaps accepted.
+5. `LITURGY_INTEGRATION_PLAN.md` for the delivery plan.
+6. `LITURGY_IMPORT_TECHNICAL.md` for the import path as built.
+7. `CONTRACT_SCRAPER.md` for the ingestion contract.
+8. `README.md` for local operation and production configuration.
+9. Current code and tests for actual behavior.
+10. `ARCHITECTURE.md`, `ARCHITECTURE_EBOOK.md`, `SYSTEM_DESIGN.md`, `VISUAL_ARCHITECTURE.md` as **historical or aspirational context only**. These describe Redis, hexagonal ports/adapters, weekly cron, a `liturgical_day_versions` collection, and a `HttpLiturgyProvider` pull-mode that were all deliberately removed. Do not implement from them and do not treat them as current.
 
 ## Two orderings that can take the site down
 
@@ -93,17 +119,27 @@ The frontend already redirects its placeholder routes (`/pt/ai`, `/pt/intentions
 
 ## The scraper
 
-Python, in `workers/liturgy-scraper/`, versioned in this repository so the contract and its only producer ship together. Stateless, one-shot, exits non-zero on failure.
+The scraper is a **separate repository** (`liturgy-scraper`) deployed as a Coolify Scheduled Job. It is not in this repository.
 
-Required behavior — a scraper that does not do all of this is not done:
+**Contract:** The scraper sends `POST /internal/v1/liturgy/import` with a `LiturgyImportRequest` body. This repo validates and stores it.
 
-1. Compute the start date in `America/Sao_Paulo` via `SCRAPER_TIMEZONE`, never the container's timezone. The container runs UTC, where `date.today()` is already tomorrow between 21:00 and 24:00 in São Paulo.
-2. Scrape a window that reaches **backwards** as well as forwards: `SCRAPER_DAYS_BEHIND` (default 7) through `SCRAPER_DAYS_AHEAD` (default 14). A forward-only window means one failed run leaves that date permanently unimported, and the API answers `503` forever. The lookbehind is what makes ingestion self-healing.
-3. Validate every reading in every day has non-empty text **before** POSTing. Quarantine and fail loudly rather than sending a day that will be rejected.
-4. Retry `429`, `5xx`, and transport failures when posting.
-5. Validate the response: `status == SUCCESS`, `processed == received`, and every expected date present. Treat `PARTIAL` and any missing date as a failed run.
-6. Send and log `X-Request-Id`, and log the returned `importId`.
-7. Exit `0` on success, `1` on any failure, so the scheduler alerts.
+**What this repo knows about the scraper:**
+- It sends batches of liturgical days
+- It retries on 429/5xx/transport failures
+- It exits 0 on success, 1 on failure
+- It sends alerts to Discord/WhatsApp on failure
+
+**What this repo does NOT control:**
+- The scraper's parse logic
+- The scraper's schedule (daily at 04:07)
+- The scraper's alerting configuration
+
+**Agents must not:**
+- Modify scraper code from this repo
+- Assume scraper behavior beyond the import contract
+- Add scraper-specific logic to the backend
+
+See the scraper's `AGENTS.md` for its operational rules.
 
 ## Commands
 
