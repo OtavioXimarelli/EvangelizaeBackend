@@ -14,15 +14,16 @@
 		-Server
 	}
 
-	// The scraper's import endpoint is never routed. This is the second of two
-	// independent barriers: the api service also publishes no host port, so the
-	// only clients able to reach /internal/* are the scraper and this proxy —
-	// and the proxy refuses. Blocked here regardless of bearer token.
-	@internal path /internal/* /actuator/*
-	respond @internal 404
-
 	// Public product surface: /api/v1/liturgy/today and /api/v1/health.
 	handle /api/* {
+		reverse_proxy api:8080 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	handle /internal/* {
 		reverse_proxy api:8080 {
 			header_up X-Real-IP {remote_host}
 			header_up X-Forwarded-For {remote_host}
