@@ -5,7 +5,7 @@ Nothing here requires Coolify.
 
 ## Scope
 
-This stack file covers the backend only: `mongo`, `api`, `scraper` and `caddy`.
+This stack file covers the backend only: `mongo`, `api` and `caddy`.
 The frontend is deployed separately and is not built from this repository.
 
 Caddy routes every path that is not `/api/*` to a service named `web` on the
@@ -100,91 +100,11 @@ because `mongosh` rejects trailing command-line arguments after the script path.
 Both modes are idempotent, and `fix` runs the gate afterwards, so a partial
 repair still fails the deploy.
 
-## Scheduling the scraper
+## Importing liturgy data
 
-There is no in-process scheduler in the API, by design: ingestion is push-only
-and the scraper is a one-shot process. Invoke it from host cron.
+POST liturgical days to `/internal/v1/liturgy/import` with a valid `LiturgyImportRequest` body. See the OpenAPI spec for the schema.
 
-```bash
-crontab -e
-```
-
-```cron
-# Daily liturgy import. 04:07 local, deliberately off the :00 spike.
-7 4 * * * cd /opt/evangelizae/api && docker compose run --rm --no-deps scraper >> /var/log/evangelizae-scraper.log 2>&1
-```
-
-Keep the odd minute. Every other scraper on the planet fires at `0 3 * * 0` or
-`0 4 * * *`, and CNBB is a small publisher.
-
-`--no-deps` skips the `depends_on: api healthy` check, because cron must not
-skip a run if the API happens to be mid-restart; the scraper retries the POST
-and a genuine API outage should page you, not silently vanish. Drop it if you
-would rather the job wait.
-
-## Alerting
-
-A scraper that dies is indistinguishable from a quiet day unless you watch the
-exit code. Do not skip this.
-
-```bash
-# /usr/local/bin/evangelizae-scraper-alert
-#!/bin/sh
-# Cron calls this AFTER the scraper. $1 is the scraper exit code.
-if [ "$1" -ne 0 ]; then
-  curl -fsS -X POST "$ALERT_WEBHOOK" \
-    -H 'Content-Type: application/json' \
-    -d "{\"text\":\"evangelizae scraper failed, exit $1. Today may have no liturgy.\"}" \
-    >/dev/null
-fi
-```
-
-The failure this catches: the scraper stops, nobody notices for three days, and
-`/pt/liturgy` serves nothing on day four because that date was never imported.
-
-## Backfilling a missed window
-
-After a scraper outage, or to seed a fresh database:
-
-```bash
-cd /opt/evangelizae/api
-# An explicit range: --start-date is the window start, and the default
-# lookbehind does not apply on top of it.
-docker compose run --rm --no-deps scraper \
-  --start-date 2026-12-01 --days 31 --days-behind 0
-```
-
-Re-importing a date is safe. Documents are keyed by the ISO date string, so a
-repeat import replaces rather than duplicates.
-
-`assert_complete_batch` refuses to POST a window with a hole in it, so a partial
-backfill is reported as a failed run rather than silently leaving the tail of the
-range unimported. A missing day also shows up in the reconciliation report
-above, since the count no longer covers the window.
-
-## When CNBB changes its markup
-
-A source-side markup change breaks ingestion silently from the outside: the
-scraper exits `1`, the alert fires, but nothing in the repository has changed.
-The `sweep` workflow runs daily against the live source for exactly this, and
-`workers/liturgy-scraper/tools/sweep.py` is the same check by hand. Run it before
-any deploy that touches `cnbb_parser.py` — a 120-day window is not enough, see
-`docs/LAUNCH_PLAN_2026-09-28.md` §7.1.
-
-```bash
-cd workers/liturgy-scraper
-uv run python tools/sweep.py                       # two liturgical years
-uv run python tools/sweep.py --start 2027-01-01 --days 60
-```
-
-A failure names the date and the shape. Refresh the fixtures for the dates the
-parser has broken on, review the diff, and only then commit it:
-
-```bash
-uv run python tools/refresh_fixtures.py --dry-run
-uv run python tools/refresh_fixtures.py
-```
-
+Re-importing a date is safe. Documents are keyed by the ISO date string, so a repeat import replaces rather than duplicates.
 
 ## Backups
 
@@ -221,6 +141,4 @@ NEW=$(openssl rand -hex 32)
 docker compose up -d --force-recreate api
 ```
 
-The token is the only thing guarding the import endpoint, and the token in
-`.env` is the same one the scraper reads. Change both together or the next
-scheduled run exits `1` on `403 FORBIDDEN`.
+The token is the only thing guarding the import endpoint.

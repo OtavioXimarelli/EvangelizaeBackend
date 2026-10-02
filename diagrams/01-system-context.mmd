@@ -5,17 +5,12 @@ C4Context
   Person(client, "Client", "Mobile / Web app")
   Person(admin, "Admin", "Moderation / Review")
   System(backend, "Evangelizae API", "Java 25 + Spring Boot 4.1<br/>Modular Monolith + Hexagonal<br/>MongoDB (all domains) + Redis")
-  System_Ext(scraper, "LiturgyScraper", "Python, cron 0 3 * * 0<br/>CNBB PRIMARY + Vatican VALIDATION")
   System_Ext(cnbb, "CNBB", "https://liturgiadiaria.edicoescnbb.com.br")
-  System_Ext(vatican, "Vatican News", "https://www.vaticannews.va/pt/palavra-do-dia")
   System_Ext(google, "Google Identity", "OAuth 2.0")
   System_Ext(smtp, "Email Provider", "SMTP / SES")
 
   Rel(client, backend, "HTTPS /api/v1<br/>JWT, CORS", "JSON")
   Rel(admin, backend, "HTTPS /api/v1<br/>JWT", "JSON")
-  Rel(scraper, cnbb, "Fetch liturgy", "HTTPS")
-  Rel(scraper, vatican, "Fetch validation", "HTTPS")
-  Rel(scraper, backend, "POST /internal/v1/liturgy/import<br/>Bearer LITURGY_IMPORT_TOKEN → Mongo", "JSON batch 14d")
   Rel(backend, google, "Verify ID token", "HTTPS")
   Rel(backend, smtp, "Send mail", "SMTP")
 

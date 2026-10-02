@@ -38,7 +38,7 @@ Accept: application/json
 
 O backend calcula a data no fuso pedido e consulta o documento desse dia no MongoDB. A API responde `503 LITURGY_UNAVAILABLE` quando o documento ainda nao foi importado.
 
-A integracao com o `LiturgyScraper` usa o endpoint protegido:
+A ingestao de dados liturgicos usa o endpoint protegido:
 
 ```http
 POST /internal/v1/liturgy/import
@@ -51,7 +51,7 @@ A arquitetura MVC e o restante do plano estao em `LITURGY_INTEGRATION_PLAN.md`.
 
 ## Contrato publico
 
-A API pública mantém o contrato `DailyLiturgy` consumido pelo frontend. Os detalhes de proveniencia, hashes e validacao do scraper permanecem internos.
+A API pública mantém o contrato `DailyLiturgy` consumido pelo frontend. Os detalhes de proveniencia, hashes e validacao permanecem internos.
 
 Exemplo estrutural (texto liturgico omitido intencionalmente):
 
@@ -97,7 +97,7 @@ LITURGY_IMPORT_TOKEN=<token-aleatorio-com-pelo-menos-32-caracteres>
 
 Gere o token com `openssl rand -hex 32`. Nao copie `.env.example` diretamente para producao: substitua os placeholders e mantenha `.env` fora do controle de versao.
 
-A variavel `LITURGY_IMPORT_URL` pertence ao deployment do `LiturgyScraper` e deve apontar para `https://api.evangelizae.com/internal/v1/liturgy/import`.
+A variavel `LITURGY_IMPORT_URL` deve apontar para `https://api.evangelizae.com/internal/v1/liturgy/import`.
 
 ## Verificacao
 

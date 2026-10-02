@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document describes the backend implementation that receives liturgical batches from the Python `LiturgyScraper`, validates and normalizes them, stores one current document per date in MongoDB, and exposes the stable public response consumed by the Next.js frontend.
+This document describes the backend implementation that receives liturgical batches via the import endpoint, validates and normalizes them, stores one current document per date in MongoDB, and exposes the stable public response consumed by the Next.js frontend.
 
 The implementation follows a feature-first Controller-Service-Repository MVC structure.
 
@@ -11,7 +11,7 @@ The broader delivery plan remains in `LITURGY_INTEGRATION_PLAN.md`.
 ## 2. Runtime Architecture
 
 ```text
-LiturgyScraper
+External Caller
     |
     | POST /internal/v1/liturgy/import
     | Authorization: Bearer <LITURGY_IMPORT_TOKEN>
@@ -42,7 +42,7 @@ LiturgyService.getToday()
 DailyLiturgy JSON for the frontend
 ```
 
-The scraper remains an external one-shot worker. It does not run inside the Spring Boot JVM.
+The import caller is external. It does not run inside the Spring Boot JVM.
 
 ## 3. Source File Inventory
 
@@ -147,7 +147,7 @@ src/test/java/org/evangelizae/api/liturgy/
 
 ### 4.1 Worker request
 
-The Python worker sends a camel-case JSON batch:
+The caller sends a camel-case JSON batch:
 
 ```http
 POST /internal/v1/liturgy/import
@@ -161,7 +161,6 @@ The batch envelope contains:
 ```json
 {
   "schemaVersion": "1.0",
-  "scraperVersion": "0.1.0",
   "scrapedAt": "2026-09-24T01:00:00Z",
   "period": {
     "from": "2026-09-24",
@@ -206,7 +205,7 @@ The token is loaded from `app.liturgy.import-config.token` and must contain at l
 
 `LiturgyImportRequest` rejects:
 
-- Missing or blank schema and scraper versions.
+- Missing or blank schema version.
 - Missing timestamps or periods.
 - Empty day lists.
 - Invalid or duplicate enum values.
@@ -240,7 +239,7 @@ Domain validation failures return `422 INVALID_LITURGY_IMPORT`.
 
 ### 4.6 Reading normalization
 
-The scraper uses `ReadingType` values:
+The import uses `ReadingType` values:
 
 ```text
 FIRST_READING
@@ -263,7 +262,7 @@ EXTRA
 
 Normalization rules:
 
-| Scraper reading | Public result |
+| Import reading | Public result |
 |---|---|
 | `FIRST_READING` | `FIRST_READING` item |
 | `PSALM` | `PSALM` item |
@@ -359,7 +358,6 @@ Example stored shape:
     "sourcesCompared": 2,
     "warnings": []
   },
-  "scraperVersion": "0.1.0",
   "scrapedAt": "2026-09-24T01:00:00Z",
   "primaryContentHash": "sha256:...",
   "provider": "CNBB",
@@ -415,7 +413,7 @@ Source mapping:
 | `fetchedAt` | `source.fetchedAt` |
 | Imported data | `source.freshness: LIVE` |
 
-Imported documents return `CNBB` as the provider. Older documents without provider metadata fall back to `mongodb`, and older documents without a fetch timestamp fall back to their update or creation timestamp.
+Imported documents return `CNBB` as the provider. Older documents without a fetch timestamp fall back to their update or creation timestamp.
 
 ### 6.4 Public response
 
@@ -497,7 +495,7 @@ MONGODB_URI=<production MongoDB URI>
 LITURGY_IMPORT_TOKEN=<random value with at least 32 characters>
 ```
 
-Worker variable:
+Caller variable:
 
 ```text
 LITURGY_IMPORT_URL=https://api.evangelizae.com/internal/v1/liturgy/import
@@ -530,12 +528,12 @@ Coolify flow:
 The release commit containing this implementation is:
 
 ```text
-6bc8bab feat: add protected liturgy scraper import
+5ea78f8 refactor: remove scraper dependency, keep only the import endpoint
 ```
 
 ## 10. Test and Verification Coverage
 
-The current backend test suite contains 16 tests.
+The current backend test suite contains 18 tests.
 
 It verifies:
 

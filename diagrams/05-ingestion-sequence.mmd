@@ -1,38 +1,25 @@
-%% 05 — Ingestion Sequence (Scraper → Backend → MongoDB)
+%% 05 — Ingestion Sequence (External → Backend → MongoDB)
 sequenceDiagram
-  participant CNBB as CNBB PRIMARY
-  participant VAT as Vatican VALIDATION
-  participant SCR as Scraper (Python)<br/>CONTRACT_SCRAPER.md:53
+  participant EXT as External Caller
   participant BE as Backend<br/>POST /internal/v1/liturgy/import
   participant MG as MongoDB [liturgical_days]
 
-  Note over SCR: cron 0 3 * * 0, range today → +13d
-  loop per day (14d)
-    SCR->>CNBB: GET /v2/liturgias/{date}
-    CNBB-->>SCR: JSON/HTML
-    SCR->>VAT: GET /palavra-do-dia/{date} (best-effort)
-    VAT-->>SCR: HTML or 404
-    Note over SCR: parse, cross-validate refs,<br/>sourceHash=sha256(raw) contentHash=sha256(canonical) CONTRACT_SCRAPER.md:226
-  end
-  SCR->>BE: POST /internal/v1/liturgy/import<br/>Bearer LITURGY_IMPORT_TOKEN CONTRACT_SCRAPER.md:90<br/>LiturgyImportRequest CONTRACT_SCRAPER.md:99
+  EXT->>BE: POST /internal/v1/liturgy/import<br/>Bearer LITURGY_IMPORT_TOKEN<br/>LiturgyImportRequest
   activate BE
-  BE->>BE: Bearer auth 401/403 CONTRACT_SCRAPER.md:384
-  BE->>BE: validate Jakarta @NotBlank/@Valid CONTRACT_SCRAPER.md:486<br/>text XOR options CONTRACT_SCRAPER.md:145
-  BE->>MG: start ClientSession + transaction CONTRACT_SCRAPER.md:414
+  BE->>BE: Bearer auth 401/403
+  BE->>BE: validate Jakarta @NotBlank/@Valid<br/>text XOR options
   loop per LiturgicalDay
-    BE->>MG: findById(date) in session (unique _id)
-    alt not exists — Case A CONTRACT_SCRAPER.md:398
-      BE->>MG: insert liturgical_days (embedded readings/sources)<br/>insert liturgical_day_versions
+    BE->>MG: findById(date) (unique _id)
+    alt not exists
+      BE->>MG: insert liturgical_days (embedded readings/sources)
       Note over BE,MG: created++
-    else contentHash == incoming — Case B CONTRACT_SCRAPER.md:401
-      BE->>MG: update lastVerifiedAt in session
+    else contentHash == incoming
+      BE->>MG: update lastVerifiedAt
       Note over BE,MG: unchanged++ (NO-OP)
-    else contentHash != incoming — Case C CONTRACT_SCRAPER.md:405
-      BE->>MG: replace liturgical_days in session<br/>insert liturgical_day_versions
+    else contentHash != incoming
+      BE->>MG: replace liturgical_days
       Note over BE,MG: updated++
     end
   end
-  BE->>MG: commitTransaction
-  BE-->>SCR: 200 {importId, SUCCESS, processed, created, updated, unchanged} CONTRACT_SCRAPER.md:424
+  BE-->>EXT: 200 {importId, SUCCESS, processed, created, updated, unchanged}
   deactivate BE
-  Note over SCR: WARNING/REVIEW_REQUIRED still persisted CONTRACT_SCRAPER.md:416

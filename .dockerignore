@@ -13,8 +13,6 @@ target
 .env.*
 !.env.example
 
-# The Python worker has its own image and build context.
-workers/
 deploy/
 diagrams/
 *.md

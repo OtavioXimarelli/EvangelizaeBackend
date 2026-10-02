@@ -40,7 +40,7 @@ paths:
       - url: http://localhost:8080
     post:
       operationId: importLiturgy
-      summary: Importa um lote da liturgia produzido pelo LiturgyScraper.
+      summary: Importa um lote da liturgia.
       security:
         - bearerAuth: []
       requestBody:
@@ -121,10 +121,9 @@ components:
             freshness: {type: string, enum: [LIVE, CACHED]}
     LiturgyImportRequest:
       type: object
-      required: [schemaVersion, scraperVersion, scrapedAt, period, days]
+      required: [schemaVersion, scrapedAt, period, days]
       properties:
         schemaVersion: {type: string, enum: ['1.0']}
-        scraperVersion: {type: string}
         scrapedAt: {type: string, format: date-time}
         period: {$ref: '#/components/schemas/ImportPeriod'}
         days:

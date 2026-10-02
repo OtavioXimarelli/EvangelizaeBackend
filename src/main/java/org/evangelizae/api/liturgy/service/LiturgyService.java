@@ -168,7 +168,6 @@ public class LiturgyService {
                         day.validation().status().name(),
                         day.validation().sourcesCompared(),
                         List.copyOf(day.validation().warnings())),
-                request.scraperVersion(),
                 request.scrapedAt(),
                 primarySource.contentHash(),
                 primarySource.name().name(),

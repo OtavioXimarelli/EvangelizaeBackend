@@ -50,20 +50,3 @@ jobs:
           fi
           cp "$RUNNER_TEMP/application.yml" src/test/resources/application.yml
       - run: ./mvnw -B test
-
-  scraper:
-    name: scraper (pytest)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: workers/liturgy-scraper
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-      - uses: actions/setup-python@v5
-        with:
-          python-version-file: workers/liturgy-scraper/pyproject.toml
-      - run: uv sync --frozen --dev
-      - run: uv run pytest -q

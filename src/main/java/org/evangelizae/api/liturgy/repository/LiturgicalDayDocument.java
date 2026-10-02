@@ -19,7 +19,6 @@ public record LiturgicalDayDocument(
         String note,
         List<Source> sources,
         Validation validation,
-        String scraperVersion,
         Instant scrapedAt,
         String primaryContentHash,
         String provider,
