@@ -48,7 +48,7 @@ When documents disagree, use this order:
 4. `docs/LAUNCH_PLAN_2026-09-28.md` for the current MVP launch plan, its ordering constraints, and its definition of done. `docs/IMPLEMENTATION_SUMMARY_2026-09-29.md` records what was actually built, the day shapes found, and the fidelity gaps accepted.
 5. `LITURGY_INTEGRATION_PLAN.md` for the delivery plan.
 6. `LITURGY_IMPORT_TECHNICAL.md` for the import path as built.
-7. `CONTRACT_SCRAPER.md` for the ingestion contract.
+7. `LITURGY_IMPORT_TECHNICAL.md` for the import path as built.
 8. `README.md` for local operation and production configuration.
 9. Current code and tests for actual behavior.
 10. `ARCHITECTURE.md`, `ARCHITECTURE_EBOOK.md`, `SYSTEM_DESIGN.md`, `VISUAL_ARCHITECTURE.md` as **historical or aspirational context only**. These describe Redis, hexagonal ports/adapters, weekly cron, a `liturgical_day_versions` collection, and a `HttpLiturgyProvider` pull-mode that were all deliberately removed. Do not implement from them and do not treat them as current.
