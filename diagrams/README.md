@@ -8,7 +8,7 @@ All diagrams are **MongoDB only + Redis** and pair with `../ARCHITECTURE.md` (sp
 | `02-containers.mmd` | Containers (C4 L2) | C4Container |
 | `03-backend-modules.mmd` | Backend Modules (Package-by-Feature) | graph TB |
 | `04-hexagonal-slice.mmd` | Hexagonal Slice (single Mongo paradigm) | graph LR |
-| `05-ingestion-sequence.mmd` | Ingestion Sequence (Scraper → Mongo) | sequenceDiagram |
+| `05-ingestion-sequence.mmd` | Ingestion Sequence (External → Mongo) | sequenceDiagram |
 | `06-public-reads.mmd` | Public Reads (liturgy + social) | sequenceDiagram |
 | `07-data-model.mmd` | Data Model (ER — MongoDB) | erDiagram |
 | `08-deployment.mmd` | Deployment | graph TB |

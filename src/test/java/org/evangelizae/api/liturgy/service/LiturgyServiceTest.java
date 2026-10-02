@@ -187,7 +187,6 @@ class LiturgyServiceTest {
         var date = days[0].date();
         return new LiturgyImportRequest(
                 "1.0",
-                "0.1.0",
                 NOW,
                 new Period(date, date),
                 List.of(days)
@@ -244,7 +243,6 @@ class LiturgyServiceTest {
                 null,
                 List.of(),
                 new LiturgicalDayDocument.Validation("VALID", 1, List.of()),
-                "0.1.0",
                 NOW.minusSeconds(60),
                 CONTENT_HASH,
                 provider,

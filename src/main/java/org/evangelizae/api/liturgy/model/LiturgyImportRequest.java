@@ -12,7 +12,6 @@ import jakarta.validation.constraints.NotNull;
 
 public record LiturgyImportRequest(
         @NotBlank String schemaVersion,
-        @NotBlank String scraperVersion,
         @NotNull Instant scrapedAt,
         @NotNull @Valid Period period,
         @NotEmpty List<@NotNull @Valid LiturgicalDay> days

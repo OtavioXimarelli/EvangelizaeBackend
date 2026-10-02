@@ -11,8 +11,7 @@
 # - `mongo` is on an `internal: true` network with no port published, and runs
 #   with authentication enabled. An unauthenticated 27017 on a public VPS is a
 #   data breach waiting to happen.
-# - `scraper` is a separate repository deployed as a Coolify Scheduled Job.
-#   It is not part of this stack file.
+
 #
 # Usage:
 #   docker compose up -d mongo api

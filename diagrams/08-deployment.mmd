@@ -2,25 +2,20 @@
 graph TB
   subgraph Internet
     U[Client<br/>Mobile/Web]
-    S[Scraper Cron<br/>Python Docker<br/>0 3 * * 0]
   end
 
   subgraph Cloud["Cloud / Docker Host"]
     LB[Load Balancer<br/>Ingress + TLS]
     BE[Backend<br/>evangelizae-api<br/>Dockerfile:1<br/>Java 25, :8080, /api/v1<br/>MongoConfig only]
-    MG[(MongoDB<br/>Atlas / managed, Mongock<br/>ALL collections, PITR)]
+    MG[(MongoDB<br/>Atlas / managed<br/>liturgical_days, PITR)]
     RD[(Redis<br/>rate-limit + Idempotency TTL)]
-    SCR[Scraper Job<br/>liturgy-scraper<br/>LITURGY_IMPORT_URL]
     ACT[Actuator<br/>/api/v1/actuator/health<br/>mongo + redis]
   end
 
-  U -->|HTTPS GET /liturgy/today → MG liturgical_days<br/>POST /social/* → MG| LB --> BE
+  U -->|HTTPS GET /liturgy/today → MG liturgical_days| LB --> BE
   BE --> MG
   BE --> RD
   BE --> ACT
-  S -.-> SCR -->|POST /internal/v1/liturgy/import<br/>Bearer → MG| LB --> BE
-  SCR -.->|GET| CNBB[(CNBB)]
-  SCR -.->|GET| VAT[(Vatican)]
 
   classDef svc fill:#1f6feb,stroke:#0b3d91,color:#fff
   classDef mongo fill:#116149,stroke:#0a3d2e,color:#fff

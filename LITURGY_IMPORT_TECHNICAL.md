@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document describes the backend implementation that receives liturgical batches from the Python `LiturgyScraper`, validates and normalizes them, stores one current document per date in MongoDB, and exposes the stable public response consumed by the Next.js frontend.
+This document describes the backend implementation that receives liturgical batches via the import endpoint, validates and normalizes them, stores one current document per date in MongoDB, and exposes the stable public response consumed by the Next.js frontend.
 
 The implementation follows a feature-first Controller-Service-Repository MVC structure.
 
@@ -11,7 +11,7 @@ The broader delivery plan remains in `LITURGY_INTEGRATION_PLAN.md`.
 ## 2. Runtime Architecture
 
 ```text
-LiturgyScraper
+External Caller
     |
     | POST /internal/v1/liturgy/import
     | Authorization: Bearer <LITURGY_IMPORT_TOKEN>
@@ -42,7 +42,7 @@ LiturgyService.getToday()
 DailyLiturgy JSON for the frontend
 ```
 
-The scraper remains an external one-shot worker. It does not run inside the Spring Boot JVM.
+The import caller is external. It does not run inside the Spring Boot JVM.
 
 ## 3. Source File Inventory
 

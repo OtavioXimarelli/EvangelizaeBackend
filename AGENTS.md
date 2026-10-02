@@ -1,15 +1,14 @@
 # Evangelizae API agent guide
 
-This file is the canonical operating guide for coding agents working on the backend. The frontend and scraper repositories have their own `AGENTS.md` files; the three are companions, not duplicates.
+This file is the canonical operating guide for coding agents working on the backend. The frontend repository has its own `AGENTS.md` file; the two are companions, not duplicates.
 
 ## Repository independence
 
-This repository is **one of three independent deployable units**:
+This repository is **one of two independent deployable units**:
 
 | Repository | Purpose | Deploy target |
 |---|---|---|
 | `EvangelizaeBackend` (this repo) | Serve liturgy, validate imports, store documents | Coolify Docker resource |
-| `liturgy-scraper` | Fetch CNBB HTML, parse, POST to backend | Coolify Scheduled Job |
 | `Evangelizae` (frontend) | Render UI, cache responses, PWA | Coolify Docker resource |
 
 **Each repository:**
@@ -18,11 +17,11 @@ This repository is **one of three independent deployable units**:
 - Has its own test suite that must pass before deploy
 - Owns its own Dockerfile and environment variables
 
-**The contract binds them:** `openapi/evangelizae-v1.openapi.yml` in this repo is the canonical API contract. The frontend has a mirror copy. The scraper implements the import side. Changing the contract requires coordinated updates across repos, but day-to-day development is independent.
+**The contract binds them:** `openapi/evangelizae-v1.openapi.yml` in this repo is the canonical API contract. The frontend has a mirror copy. Changing the contract requires coordinated updates across repos, but day-to-day development is independent.
 
 **Agents working on this repo must:**
-- Never assume the scraper or frontend code is in this repository
-- Never modify scraper or frontend code from this repo
+- Never assume the frontend code is in this repository
+- Never modify frontend code from this repo
 - Treat the OpenAPI spec as the boundary — if it doesn't change, the other repos don't need to
 - Run only this repo's test suite (`./mvnw test`) to validate changes
 - Deploy only this repo's Docker image to Coolify
@@ -59,9 +58,7 @@ When documents disagree, use this order:
 Two constraints in the launch plan are not stylistic. Reversing either causes an outage:
 
 1. **Reconcile the production `liturgical_days` collection before deploying any change that makes a missing `provider` fatal.** The API must never serve a document whose source is unknown, so a document without `provider` returns `503`. Ship that first against an unreconciled database and `/pt/liturgy` goes dark.
-2. **The scraper must parse every day shape CNBB publishes before any windowed run.** One unparseable day rejects the whole batch, because the import request is validated in full before anything is written. The shapes that once broke it: memorials with two permitted first readings (2026-09-29, 2026-12-21, 2027-01-25), days that publish several Masses in one body (2026-12-24, 2026-12-25), All Souls with its `Outras leituras próprias à escolha` catalogue (2026-11-02), the Easter Vigil sharing its body with the Masses that follow (2026-04-04), and Easter Sunday with no season label at all (2026-04-05). All are fixtures now.
-
-   The day's own summary is the authority on which readings the day has. Never publish a citation the summary did not name, and never fill a gap from a neighbouring reading: a citation that is present but belongs to another Mass is as wrong as one that is missing, and an `EMPTY-TEXT` check cannot see it. A 120-day window will not contain any of these dates, so the gate is a 400-day sweep — see `docs/LAUNCH_PLAN_2026-09-28.md` §7.1 and `workers/liturgy-scraper/tools/sweep.py`.
+2. **The import request is validated in full before anything is written.** A single invalid day rejects the entire batch — the caller is responsible for never sending one.
 
 ## Liturgical text sourcing — decided
 
@@ -84,7 +81,7 @@ Shipped in the MVP:
 
 - `GET /api/v1/liturgy/today?timezone=&locale=` — the only public product endpoint.
 - `GET /api/v1/health` — public liveness.
-- `POST /internal/v1/liturgy/import` — bearer-protected batch ingestion from the scraper.
+- `POST /internal/v1/liturgy/import` — bearer-protected batch ingestion.
 
 **Out of the MVP, explicitly.** Do not build these unless the product owner opens a new cycle:
 
@@ -106,40 +103,24 @@ The frontend already redirects its placeholder routes (`/pt/ai`, `/pt/intentions
 - **No ads, paywalls, premium tiers, leaderboards, coins, rewards, competitive streaks, or engagement traps.**
 - Any change to prayer text, mystery fruit, or biblical reference requires pastoral sign-off before production.
 - Secrets (`LITURGY_IMPORT_TOKEN`, `MONGODB_URI`) never enter the repository, the browser bundle, or logs.
-- Internal import metadata (hashes, scraper version, validation warnings, source URLs) stays internal. The public contract exposes only `DailyLiturgy`.
+- Internal import metadata (hashes, validation warnings, source URLs) stays internal. The public contract exposes only `DailyLiturgy`.
 
 ## Architecture rules
 
 - Feature-first, package-by-feature, Spring MVC. No hexagonal ports/adapters, no generic repository framework, no CQRS.
-- **Ingestion is push, never pull.** The scraper is a separate one-shot process on an external schedule. There is no in-process scheduler and no provider called at request time.
+- **Ingestion is push, never pull.** There is no in-process scheduler and no provider called at request time.
 - One document per liturgical date, keyed by the ISO date string. Re-importing the same date replaces it. This makes ingestion idempotent without a migration engine.
-- The import request is validated in full **before** any document is written. A single invalid day rejects the entire batch — the scraper is responsible for never sending one.
+- The import request is validated in full **before** any document is written. A single invalid day rejects the entire batch — the caller is responsible for never sending one.
 - Date logic is always `LocalDate.ofInstant(clock.instant(), ZoneId)` against the requested IANA zone, with a UTC `Clock` injected. Never use server-local dates.
 - `Content-Type: application/json`, `camelCase`, `exclude_none` semantics, dates as `YYYY-MM-DD`, timestamps as UTC ISO-8601.
 
-## The scraper
+## Import endpoint
 
-The scraper is a **separate repository** (`liturgy-scraper`) deployed as a Coolify Scheduled Job. It is not in this repository.
-
-**Contract:** The scraper sends `POST /internal/v1/liturgy/import` with a `LiturgyImportRequest` body. This repo validates and stores it.
-
-**What this repo knows about the scraper:**
-- It sends batches of liturgical days
-- It retries on 429/5xx/transport failures
-- It exits 0 on success, 1 on failure
-- It sends alerts to Discord/WhatsApp on failure
-
-**What this repo does NOT control:**
-- The scraper's parse logic
-- The scraper's schedule (daily at 04:07)
-- The scraper's alerting configuration
+The import endpoint accepts `POST /internal/v1/liturgy/import` with a `LiturgyImportRequest` body. This repo validates and stores it.
 
 **Agents must not:**
-- Modify scraper code from this repo
-- Assume scraper behavior beyond the import contract
 - Add scraper-specific logic to the backend
-
-See the scraper's `AGENTS.md` for its operational rules.
+- Assume caller behavior beyond the import contract
 
 ## Commands
 
@@ -148,12 +129,6 @@ mise install
 mise exec -- ./mvnw test
 mise exec -- ./mvnw clean package
 mise exec -- ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
-
-# scraper
-cd workers/liturgy-scraper
-uv sync
-uv run pytest
-uv run python -m app.main --dry-run --start-date 2026-09-29 --days 3
 ```
 
 Local stack: `docker compose up --build`, API on `:8080`, MongoDB on `:27017`.
@@ -170,14 +145,8 @@ Compose warns on every command when two exist.
   internet by network topology, not only by bearer token.
 - `caddy` terminates TLS and blocks `/internal/*` and `/actuator/*`. Do not remove
   it without replacing both functions.
-- `scraper` is a one-shot job behind the `job` profile. There is no in-process
-  scheduler; host cron invokes it. See `deploy/README.md`.
 - `MONGODB_URI` feeds `spring.mongodb.uri`. In Spring Boot 4,
   `spring.data.mongodb.uri` is **not** the connection property; using it makes the
   driver silently fall back to `mongodb://localhost/test`.
-- The scraper image activates its virtualenv for the whole process environment,
-  not only for `uv run`, so `docker compose run scraper python -m app.main
-  --dry-run` works for debugging from the host.
 
-Full runbook, including cron, alerting, backups and token rotation:
-`deploy/README.md`.
+Full runbook, including backups and token rotation: `deploy/README.md`.

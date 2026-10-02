@@ -109,7 +109,6 @@ class LiturgyImportControllerTest {
         return """
                 {
                   "schemaVersion": "1.0",
-                  "scraperVersion": "0.1.0",
                   "scrapedAt": "2026-09-24T01:00:00Z",
                   "period": {
                     "from": "2026-09-24",

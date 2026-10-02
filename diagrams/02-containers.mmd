@@ -8,16 +8,11 @@ C4Container
     Container(backend, "Backend", "Java 25, Spring Boot 4.1", "Modular Monolith<br/>/api/v1 + /internal/v1<br/>EvangelizaeApiApplication.java:8")
     ContainerDb(mongo, "MongoDB", "MongoDB", "ALL: liturgy, identity, prayer, social<br/>liturgical_days, users, follows…<br/>Mongock + ClientSession")
     ContainerDb(redis, "Redis", "Redis", "Rate-limit, Idempotency TTL")
-    Container(scraper, "LiturgyScraper", "Python, Docker cron", "Stateless job<br/>CONTRACT_SCRAPER.md:53")
   }
 
   System_Ext(cnbb, "CNBB API", "PRIMARY source")
-  System_Ext(vatican, "Vatican News", "VALIDATION source")
 
   Rel(user, backend, "GET /liturgy/today (→Mongo liturgical_days)<br/>POST /social/* (→Mongo)<br/>openapi/evangelizae-v1.openapi.yml:9", "HTTPS")
-  Rel(scraper, cnbb, "GET /v2/liturgias/{date}", "HTTPS")
-  Rel(scraper, vatican, "GET /palavra-do-dia/{date}", "HTML")
-  Rel(scraper, backend, "POST /internal/v1/liturgy/import<br/>CONTRACT_SCRAPER.md:88", "JSON → Mongo")
   Rel(backend, mongo, "Spring Data MongoDB<br/>ClientSession transactions", "Mongo protocol")
   Rel(backend, redis, "Rate limit + Idempotency TTL", "RESP")
 
