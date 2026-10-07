@@ -5,9 +5,10 @@
 #   edge (bridge)          web  <->  caddy  <->  api
 #   data (internal: true)  api  <->  mongo
 #
-# - `api` publishes no port to the host. The only way in is the reverse proxy,
-#   and the proxy does not route /internal/*. The import endpoint is therefore
-#   unreachable from the internet by network topology, not only by bearer token.
+# - `api` publishes port 8080 on the host during beta so the developer's local
+#   machine can call it directly. The bearer token is the sole security layer
+#   for /internal/* in this stage. Before leaving beta, remove the port mapping
+#   so the only way in is the reverse proxy, which does not route /internal/*.
 # - `mongo` is on an `internal: true` network with no port published, and runs
 #   with authentication enabled. An unauthenticated 27017 on a public VPS is a
 #   data breach waiting to happen.
@@ -59,7 +60,12 @@ services:
       LITURGY_IMPORT_TOKEN: ${LITURGY_IMPORT_TOKEN:?set LITURGY_IMPORT_TOKEN in .env}
       # Optional JVM tuning without rebuilding the image.
       JAVA_TOOL_OPTIONS: ${API_JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError}
-    # No `ports:` on purpose — see the topology note above.
+    # Beta: API is reachable from the host so the developer's local machine can
+    # call it directly. The bearer token (LITURGY_IMPORT_TOKEN) is the sole
+    # security layer for /internal/* during this stage. Restore network
+    # isolation (remove this ports mapping) before leaving beta.
+    ports:
+      - "8080:8080"
     networks:
       - data
       - edge
