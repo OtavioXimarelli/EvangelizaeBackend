@@ -65,7 +65,7 @@ cd /data/coolify/services/<resource-uuid>
 cat /var/backups/evangelizae-pre-cutover-$(date +%F).gz | \
   docker compose exec -T mongo mongorestore --archive --drop \
     --username="$MONGO_ROOT_USERNAME" --password="$MONGO_ROOT_PASSWORD" \
-    --authenticationDatabase="$MONGO_DATABASE"
+    --authenticationDatabase=admin
 
 # 4. Run the reconcile gate (below), then verify /today and one import round-trip.
 # 5. Stop the old Mongo resource. Keep it for a week before deleting it.
@@ -141,7 +141,9 @@ project, so Coolify's database backups do not apply — the schedule is yours:
 #!/bin/sh
 set -e
 cd /data/coolify/services/<resource-uuid>
-docker compose exec -T mongo mongodump --archive | gzip \
+docker compose exec -T mongo mongodump --archive \
+  --username="$MONGO_ROOT_USERNAME" --password="$MONGO_ROOT_PASSWORD" \
+  --authenticationDatabase=admin | gzip \
   > "/var/backups/evangelizae-$(date +%F).gz"
 ```
 
@@ -160,7 +162,7 @@ cd /data/coolify/services/<resource-uuid>
 gunzip -c /var/backups/evangelizae-$(date +%F).gz | \
   docker compose exec -T mongo mongorestore --archive --drop \
     --username="$MONGO_ROOT_USERNAME" --password="$MONGO_ROOT_PASSWORD" \
-    --authenticationDatabase="$MONGO_DATABASE"
+    --authenticationDatabase=admin
 ```
 
 The collection is ~365 documents per year, so a nightly dump is a few hundred
