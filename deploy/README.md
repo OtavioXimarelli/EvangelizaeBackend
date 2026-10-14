@@ -50,25 +50,17 @@ curl -fsS https://api.evangelizae.com/api/v1/health   # from your machine
 
 ## Migrating from the old standalone Mongo resource
 
-Order matters: dump before creating, restore before announcing.
+The production database starts empty, so no snapshot or restore is needed: deploy
+the compose resource (empty database, `/today` answers 503) and run the import
+pipeline against it. Keep the old standalone Mongo resource around for a week as a
+safety net before deleting it; there is nothing to reconcile into the new store.
 
 ```bash
-# 1. Snapshot the old resource as root (the app user is readWrite only, and
-#    mongorestore --drop needs more than readWrite).
-docker exec <old-mongo-container> mongodump --archive | gzip \
-  > /var/backups/evangelizae-pre-cutover-$(date +%F).gz
+# 1. Create and deploy the compose resource (empty database, /today answers 503).
 
-# 2. Create and deploy the compose resource (empty database, /today answers 503).
+# 2. Verify /today and one import round-trip.
 
-# 3. Restore inside the new stack.
-cd /data/coolify/services/<resource-uuid>
-cat /var/backups/evangelizae-pre-cutover-$(date +%F).gz | \
-  docker compose exec -T mongo mongorestore --archive --drop \
-    --username="$MONGO_ROOT_USERNAME" --password="$MONGO_ROOT_PASSWORD" \
-    --authenticationDatabase=admin
-
-# 4. Run the reconcile gate (below), then verify /today and one import round-trip.
-# 5. Stop the old Mongo resource. Keep it for a week before deleting it.
+# 3. Stop the old Mongo resource. Keep it for a week before deleting it.
 ```
 
 ## Verifying the topology
