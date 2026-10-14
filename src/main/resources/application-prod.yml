@@ -5,3 +5,10 @@ spring:
 
 server:
   forward-headers-strategy: framework
+
+# Actuator moves off the public port. The proxy routes only 8080, so
+# /actuator/* stops being reachable from the internet; the container healthcheck
+# stays on the app's own /api/v1/health. Dev keeps the single-port layout.
+management:
+  server:
+    port: ${MANAGEMENT_PORT:9090}

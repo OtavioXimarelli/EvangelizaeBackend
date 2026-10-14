@@ -1,68 +1,93 @@
-# VPS runbook
+# Deploy runbook
 
-Everything below runs on the VPS with Docker Engine + the Compose plugin.
-Nothing here requires Coolify.
+Production is **one** Coolify resource: a Docker Compose application built from
+this repository's `compose.yml`, holding both `mongo` and `api`. There is no
+separate database resource to point at — `mongo` is a service name inside the
+compose project, and `compose.yml` builds `MONGODB_URI` from it. A plain VPS run
+of the same file also works, with `caddy` behind the `proxy` profile.
 
-## Scope
+## Where things live
 
-This stack file covers the backend only: `mongo`, `api` and `caddy`.
-The frontend is deployed separately and is not built from this repository.
+| Deployment | Compose project dir | TLS |
+|---|---|---|
+| Coolify | `/data/coolify/services/<resource uuid>` | Coolify proxy (`api.evangelizae.com` → `api:8080`) |
+| Plain VPS | wherever the repo is checked out | `docker compose --profile proxy up -d` |
 
-Caddy routes every path that is not `/api/*` to a service named `web` on the
-`edge` network. Point that at however you run the frontend — a second Compose
-project joined to the same external network, or a container attached directly:
+`/internal/*` has no proxy-level block during beta. The bearer token
+(`LITURGY_IMPORT_TOKEN`) is the only thing guarding the import endpoint — restore
+a proxy path rule and remove the `127.0.0.1` port binding before leaving beta.
 
-```bash
-# Option A: a separate Compose project on a shared external network.
-docker network create evangelizae_edge
-#   in the frontend project:  networks: [evangelizae_edge]  (external: true)
-#   in this project:         edge: {name: evangelizae_edge, external: true}
+## First deploy (Coolify)
 
-# Option B: a plain container on the same network.
-docker network connect evangelizae_edge <frontend-container>
+Create the resource: New → Application → Docker Compose.
+
+- **Repository / branch:** this repo, `main`
+- **Docker compose file location:** `/compose.yml`
+- **Service:** `api` — **Port:** `8080`
+- **Domains:** `api.evangelizae.com` (Coolify proxy + automatic TLS)
+- **Environment variables** (same names as `.env.example`, set in the Coolify UI,
+  never committed):
+
+```env
+APP_CORS_ALLOWED_ORIGINS=https://evangelizae.com
+LITURGY_IMPORT_TOKEN=<openssl rand -hex 32>
+MONGO_DATABASE=evangelizae
+MONGO_ROOT_USERNAME=evangelizae_root
+MONGO_ROOT_PASSWORD=<openssl rand -hex 32>
+MONGO_APP_USERNAME=evangelizae
+MONGO_APP_PASSWORD=<openssl rand -hex 32>
 ```
 
-If the frontend is not running, Caddy returns 502 for non-`/api` paths. The API
-itself is unaffected — `/api/v1/liturgy/today` keeps serving.
-
-## First deploy
+DNS for the domain must already resolve to the VPS, or the certificate fails to
+issue. Deploy, then confirm from the host before exposing anything:
 
 ```bash
-cd /opt/evangelizae/api
-cp .env.example .env && chmod 600 .env
-# edit .env: SITE_DOMAIN, ACME_EMAIL, all three secrets, APP_CORS_ALLOWED_ORIGINS
+cd /data/coolify/services/<resource-uuid>
+docker compose ps          # mongo healthy, api up
+docker compose logs api | grep -i 'started\|mongo'
+curl -fsS https://api.evangelizae.com/api/v1/health   # from your machine
 ```
 
-DNS for `SITE_DOMAIN` must already point at this host, or the TLS certificate
-will fail to issue and the site will be unreachable.
+## Migrating from the old standalone Mongo resource
+
+Order matters: dump before creating, restore before announcing.
 
 ```bash
-# Build both images first so a failure is visible before anything starts.
-docker compose build
+# 1. Snapshot the old resource as root (the app user is readWrite only, and
+#    mongorestore --drop needs more than readWrite).
+docker exec <old-mongo-container> mongodump --archive | gzip \
+  > /var/backups/evangelizae-pre-cutover-$(date +%F).gz
 
-# Start the core. The api waits for mongo to report healthy.
-docker compose up -d mongo api
+# 2. Create and deploy the compose resource (empty database, /today answers 503).
 
-# Confirm before exposing anything.
-docker compose ps
-curl -fsS http://api:8080/api/v1/health 2>/dev/null || \
-  docker compose exec api curl -fsS http://127.0.0.1:8080/api/v1/health
+# 3. Restore inside the new stack.
+cd /data/coolify/services/<resource-uuid>
+cat /var/backups/evangelizae-pre-cutover-$(date +%F).gz | \
+  docker compose exec -T mongo mongorestore --archive --drop \
+    --username="$MONGO_ROOT_USERNAME" --password="$MONGO_ROOT_PASSWORD" \
+    --authenticationDatabase="$MONGO_DATABASE"
 
-# Then the edge: reverse proxy.
-docker compose --profile proxy up -d
+# 4. Run the reconcile gate (below), then verify /today and one import round-trip.
+# 5. Stop the old Mongo resource. Keep it for a week before deleting it.
 ```
 
 ## Verifying the topology
 
-The important property is that `/internal/*` is unreachable from the internet:
+What the topology guarantees today, and what it does not:
 
 ```bash
 # Public surface answers.
-curl -fsS https://$SITE_DOMAIN/api/v1/health
+curl -fsS https://api.evangelizae.com/api/v1/health
 
-# The import endpoint does not, and never will.
-curl -s -o /dev/null -w '%{http_code}\n' https://$SITE_DOMAIN/internal/v1/liturgy/import
-# expect 404 — from the proxy, and because the api publishes no host port
+# During beta /internal/* IS reachable here: it answers 401 without the token,
+# which is the bearer check doing its job, and the token is the only guard.
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  https://api.evangelizae.com/internal/v1/liturgy/import
+# expect 401 — no proxy path rule blocks it during beta
+
+# Actuator is not on the public port at all.
+curl -s -o /dev/null -w '%{http_code}\n' https://api.evangelizae.com/actuator/health
+# expect 404 — management runs on 9090 inside the container and is unrouted
 
 # Mongo is not listening on the host at all.
 ss -lntp | grep 27017 || echo '27017 not listening — correct'
@@ -77,7 +102,7 @@ the deploy that introduces the strict path; shipping the code against an
 unreconciled collection takes `/pt/liturgy` dark.
 
 ```bash
-cd /opt/evangelizae/api
+cd /data/coolify/services/<resource-uuid>
 docker compose exec -T -e RECONCILE_MODE=check mongo mongosh \
   -u "$MONGO_APP_USERNAME" -p "$MONGO_APP_PASSWORD" \
   --authenticationDatabase "$MONGO_DATABASE" --quiet \
@@ -108,13 +133,34 @@ Re-importing a date is safe. Documents are keyed by the ISO date string, so a re
 
 ## Backups
 
-`mongo_data` is the only stateful volume.
+`mongo_data` is the only stateful volume. It is a named volume in the compose
+project, so Coolify's database backups do not apply — the schedule is yours:
 
 ```bash
-docker compose exec -T mongo mongodump \
-  --username="$MONGO_APP_USERNAME" --password="$MONGO_APP_PASSWORD" \
-  --authenticationDatabase="$MONGO_DATABASE" \
-  --archive | gzip > "/var/backups/evangelizae-$(date +%F).gz"
+# /etc/cron.daily/evangelizae-backup  (chmod +x)
+#!/bin/sh
+set -e
+cd /data/coolify/services/<resource-uuid>
+docker compose exec -T mongo mongodump --archive | gzip \
+  > "/var/backups/evangelizae-$(date +%F).gz"
+```
+
+Keep the copy off the VPS too — a dump on the same disk as the database is not a
+backup:
+
+```bash
+rclone copy "/var/backups/" b2:evangelizae-backups/
+```
+
+Restore is the reverse of the migration step. Connect as root, since the app user
+is `readWrite` only and `--drop` needs more:
+
+```bash
+cd /data/coolify/services/<resource-uuid>
+gunzip -c /var/backups/evangelizae-$(date +%F).gz | \
+  docker compose exec -T mongo mongorestore --archive --drop \
+    --username="$MONGO_ROOT_USERNAME" --password="$MONGO_ROOT_PASSWORD" \
+    --authenticationDatabase="$MONGO_DATABASE"
 ```
 
 The collection is ~365 documents per year, so a nightly dump is a few hundred
@@ -125,8 +171,14 @@ before trusting a restore.
 
 ## Updating
 
+A push to `main` redeploys the compose resource: Coolify rebuilds the `api`
+image and recreates that container. `mongo` is only restarted if its own
+configuration changed, and its data lives in `mongo_data` either way.
+
+On a plain VPS, the same thing by hand:
+
 ```bash
-cd /opt/evangelizae/api && git pull && docker compose build && docker compose up -d
+git pull && docker compose build && docker compose up -d
 ```
 
 `server.shutdown: graceful` plus a 10s cap in `application.yml` means `up -d`
@@ -134,6 +186,11 @@ replaces the api without dropping in-flight reads. Watch for the container to
 reach `healthy` before assuming the deploy landed.
 
 ## Rotating `LITURGY_IMPORT_TOKEN`
+
+Coolify: generate a new token with `openssl rand -hex 32`, update
+`LITURGY_IMPORT_TOKEN` in the resource environment variables, and redeploy.
+
+Plain VPS:
 
 ```bash
 NEW=$(openssl rand -hex 32)

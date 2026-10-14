@@ -5,10 +5,18 @@
 #   edge (bridge)          web  <->  caddy  <->  api
 #   data (internal: true)  api  <->  mongo
 #
+# This single file is the stack, both on a plain VPS and as the one Coolify
+# resource that holds both services: `mongo` is a compose service name, never a
+# Coolify-generated database hostname, so `MONGODB_URI` is built here and no
+# credential travels through the Coolify UI to reach another resource.
+#
 # - `api` publishes port 8080 on the host during beta so the developer's local
-#   machine can call it directly. The bearer token is the sole security layer
-#   for /internal/* in this stage. Before leaving beta, remove the port mapping
-#   so the only way in is the reverse proxy, which does not route /internal/*.
+#   machine can call it directly. It is bound to 127.0.0.1, so it never becomes
+#   an internet-facing surface; the reverse proxy (Coolify's, or `caddy` on a
+#   plain VPS) is the only way in. The bearer token (LITURGY_IMPORT_TOKEN) is
+#   the sole security layer for /internal/* during this stage, because no proxy
+#   path rule blocks it. Before leaving beta, remove the port mapping and turn
+#   the token-only arrangement into a proxy-level block.
 # - `mongo` is on an `internal: true` network with no port published, and runs
 #   with authentication enabled. An unauthenticated 27017 on a public VPS is a
 #   data breach waiting to happen.
@@ -56,16 +64,19 @@ services:
       PORT: 8080
       MONGODB_URI: mongodb://${MONGO_APP_USERNAME}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_DATABASE:-evangelizae}?authSource=${MONGO_DATABASE:-evangelizae}
       MONGO_DATABASE: ${MONGO_DATABASE:-evangelizae}
+      # Not routed by the proxy, so /actuator/* stays off the public surface.
+      MANAGEMENT_PORT: ${MANAGEMENT_PORT:-9090}
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:?set APP_CORS_ALLOWED_ORIGINS in .env}
       LITURGY_IMPORT_TOKEN: ${LITURGY_IMPORT_TOKEN:?set LITURGY_IMPORT_TOKEN in .env}
       # Optional JVM tuning without rebuilding the image.
       JAVA_TOOL_OPTIONS: ${API_JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError}
     # Beta: API is reachable from the host so the developer's local machine can
-    # call it directly. The bearer token (LITURGY_IMPORT_TOKEN) is the sole
-    # security layer for /internal/* during this stage. Restore network
-    # isolation (remove this ports mapping) before leaving beta.
+    # call it directly. The binding is 127.0.0.1, so the port is never public;
+    # the bearer token (LITURGY_IMPORT_TOKEN) is the sole security layer for
+    # /internal/* during this stage. Restore network isolation (remove this
+    # ports mapping) before leaving beta.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${API_HOST_PORT:-8080}:8080"
     networks:
       - data
       - edge
