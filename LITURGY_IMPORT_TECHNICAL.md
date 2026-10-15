@@ -520,10 +520,15 @@ docker build -t evangelizae-api .
 Coolify flow:
 
 1. Coolify tracks the `main` branch.
-2. A push to `main` starts a Dockerfile build.
-3. The application environment variables are injected by Coolify.
+2. A push to `main` rebuilds the Docker Compose resource: `compose.yml` builds
+   the `api` image via `Dockerfile` and recreates that container, leaving `mongo`
+   running unless its own configuration changed.
+3. The resource environment variables are injected by Coolify and interpolated
+   into the compose file (this is what builds `MONGODB_URI` from the service name
+   `mongo`).
 4. The container starts with `SPRING_PROFILES_ACTIVE=prod`.
-5. `application-prod.yml` enables forwarded-header handling for the Coolify proxy.
+5. `application-prod.yml` enables forwarded-header handling for the Coolify proxy
+   and moves Actuator off the routed port (`MANAGEMENT_PORT`, default `9090`).
 
 The release commit containing this implementation is:
 

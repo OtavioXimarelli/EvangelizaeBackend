@@ -85,19 +85,36 @@ Nenhum texto catolico e embutido como fallback. A fonte esta definida: CNBB / Ed
 
 ## Configuracao de producao
 
-O Coolify builda a imagem usando o `Dockerfile` e redeploy a aplicacao quando a branch `main` recebe um push. Configure no ambiente da aplicacao:
+O Coolify deploya **um unico recurso** Docker Compose com os dois servicos
+(`mongo` e `api`), a partir do `compose.yml`. Nao existe recurso de banco
+separado: `mongo` e um nome de servico do compose e `MONGODB_URI` e montado pelo
+proprio arquivo, entao nenhuma URI precisa ser copiada do painel do Coolify.
+Configure no ambiente do recurso:
 
 ```text
 SPRING_PROFILES_ACTIVE=prod
 PORT=8080
 APP_CORS_ALLOWED_ORIGINS=https://evangelizae.com
-MONGODB_URI=<mongodb-uri-de-producao>
 LITURGY_IMPORT_TOKEN=<token-aleatorio-com-pelo-menos-32-caracteres>
+MONGO_DATABASE=evangelizae
+MONGO_ROOT_USERNAME=evangelizae_root
+MONGO_ROOT_PASSWORD=<openssl rand -hex 32>
+MONGO_APP_USERNAME=evangelizae
+MONGO_APP_PASSWORD=<openssl rand -hex 32>
 ```
 
-Gere o token com `openssl rand -hex 32`. Nao copie `.env.example` diretamente para producao: substitua os placeholders e mantenha `.env` fora do controle de versao.
+`MONGODB_URI` e derivado dessas variaveis dentro do `compose.yml`; nao a defina
+a mao. Em prod o Actuator roda na porta propria (`MANAGEMENT_PORT`, padrao 9090)
+e nao e roteado pelo proxy, entao `/actuator/*` fica fora da superficie publica.
 
-A variavel `LITURGY_IMPORT_URL` deve apontar para `https://api.evangelizae.com/internal/v1/liturgy/import`.
+Gere o token com `openssl rand -hex 32`. Nao copie `.env.example` diretamente
+para producao: substitua os placeholders e mantenha `.env` fora do controle de
+versao.
+
+A variavel `LITURGY_IMPORT_URL` deve apontar para `https://api.evangelizae.com/internal/v1/liturgy/import`. Durante a beta esse caminho e alcancavel publicamente: o token bearer e a unica protecao.
+
+O runbook completo — primeiro deploy, migracao do banco antigo, backup,
+restore e rotacao de token — esta em `deploy/README.md`.
 
 ## Verificacao
 

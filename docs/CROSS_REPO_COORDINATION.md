@@ -110,12 +110,17 @@ The backend has two URLs:
 ### Rule 9: Deployment is via Coolify
 
 All three repos deploy as Coolify resources:
-- Backend: Docker resource, port 8080, domain `api.evangelizae.com`
+- Backend: **Docker Compose resource** holding `mongo` and `api`, service `api`,
+  port 8080, domain `api.evangelizae.com`. `mongo` is a compose service name;
+  `MONGODB_URI` is built inside `compose.yml`, so no Coolify database resource
+  is involved.
 - Frontend: Docker resource, port 3000, domain `evangelizae.com`
 - Scraper: Scheduled Job, cron `7 4 * * *`, no ports
 
 **Agents must not:**
-- Add `compose.yml` or Docker deployment logic to the repos (Coolify handles this)
+- Add `compose.yml` or Docker deployment logic to the frontend or scraper repos
+  (Coolify handles those). The backend's `compose.yml` is the exception: it *is*
+  the backend's deployment unit.
 - Assume local Docker Compose setup reflects production
 - Modify deployment configuration from within the repos
 

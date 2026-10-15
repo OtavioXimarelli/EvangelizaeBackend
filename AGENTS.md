@@ -8,14 +8,14 @@ This repository is **one of two independent deployable units**:
 
 | Repository | Purpose | Deploy target |
 |---|---|---|
-| `EvangelizaeBackend` (this repo) | Serve liturgy, validate imports, store documents | Coolify Docker resource |
+| `EvangelizaeBackend` (this repo) | Serve liturgy, validate imports, store documents | Coolify Docker Compose resource (`api` + `mongo`) |
 | `Evangelizae` (frontend) | Render UI, cache responses, PWA | Coolify Docker resource |
 
 **Each repository:**
 - Has its own lifecycle, CI, and deployment
 - Can be deployed independently without touching the others
 - Has its own test suite that must pass before deploy
-- Owns its own Dockerfile and environment variables
+- Owns its own stack file and environment variables
 
 **The contract binds them:** `openapi/evangelizae-v1.openapi.yml` in this repo is the canonical API contract. The frontend has a mirror copy. Changing the contract requires coordinated updates across repos, but day-to-day development is independent.
 
@@ -24,7 +24,7 @@ This repository is **one of two independent deployable units**:
 - Never modify frontend code from this repo
 - Treat the OpenAPI spec as the boundary — if it doesn't change, the other repos don't need to
 - Run only this repo's test suite (`./mvnw test`) to validate changes
-- Deploy only this repo's Docker image to Coolify
+- Deploy only this repo's compose resource to Coolify
 
 ## What this service is
 
@@ -136,17 +136,73 @@ Local stack: `docker compose up --build`, API on `:8080`, MongoDB on `:27017`.
 ## Docker and VPS operation
 
 `compose.yml` is the single stack file. Do not add a second compose file; Docker
-Compose warns on every command when two exist.
+Compose warns on every command when two exist. It is also the file the single
+Coolify resource deploys: one resource holds both `mongo` and `api`, so `mongo`
+is a compose service name and not a Coolify-generated database hostname.
 
 - `mongo` runs with authentication, publishes no port, and sits on an
   `internal: true` network. Never publish `27017` on a public host.
-- `api` publishes **no host port**. The only way in is the Caddy proxy, and
-  Caddy does not route `/internal/*`. The import endpoint is unreachable from the
-  internet by network topology, not only by bearer token.
-- `caddy` terminates TLS and blocks `/internal/*` and `/actuator/*`. Do not remove
-  it without replacing both functions.
+- `MONGODB_URI` is built inside `compose.yml` from `MONGO_APP_*` and the service
+  name `mongo`. Do not reintroduce a cross-resource URI, and do not ask for a URI
+  to be pasted into the Coolify UI to reach another resource.
+- `api` publishes **no host port** in production. The only way in is the reverse
+  proxy — Coolify's, or `caddy` on a plain VPS.
+- **Beta exception (current):** during this beta stage `api` publishes `127.0.0.1`
+  only, so the port is reachable from the VPS host and never from the internet.
+- **`/internal/*` is protected by the bearer token alone during beta.** There is
+  no proxy path rule blocking it; the token (`LITURGY_IMPORT_TOKEN`) is the sole
+  security layer, by explicit decision. Do not weaken the token check. Before
+  leaving beta, restore both the proxy-level block and the missing port mapping.
+- In prod, Actuator runs on its own port (`MANAGEMENT_PORT`, default `9090`) and
+  is not routed by the proxy, so `/actuator/*` is off the public surface. The
+  container healthcheck stays on the app's own `/api/v1/health`.
+- `caddy` stays behind the `proxy` profile for VPS use and is never started by
+  Coolify. It terminates TLS for that path; do not remove it without replacing
+  TLS termination.
 - `MONGODB_URI` feeds `spring.mongodb.uri`. In Spring Boot 4,
   `spring.data.mongodb.uri` is **not** the connection property; using it makes the
   driver silently fall back to `mongodb://localhost/test`.
 
-Full runbook, including backups and token rotation: `deploy/README.md`.
+Backups are no longer Coolify-managed, because the database is not a Coolify
+resource anymore; `deploy/README.md` owns the schedule and the restore.
+
+---
+
+## Development job rules
+
+These rules are injected by the agent harness for every task in this repository.
+
+You are a high-efficiency code generation engine integrated into an automated
+harness. Your primary goals are precision, strict adherence to existing
+architecture, and token economy.
+
+### OPERATIONAL RULES & CONSTRAINTS
+
+1. **NO CONVERSATIONAL PROSE.** Do not output conversational filler, greetings,
+   acknowledgments ("Here is the solution...", "Sure, I can help with that"), or
+   closing remarks. Jump directly into the code or patch.
+
+2. **CONCISE TECHNICAL EXPLANATIONS.** Provide technical context ONLY when
+   explicitly asked or when documenting an obscure edge-case fix. Limit any
+   necessary explanation to a maximum of 2 concise bullet points directly above
+   the code.
+
+3. **MINIMAL DIFF / PATCH ONLY.**
+   - NEVER rewrite entire files or classes unless creating a brand-new file from
+     scratch.
+   - For modifications, output strictly unified diffs (`diff -u` / patch format) or
+     targeted replacement blocks specifying the exact file path and line context.
+   - Include only 2–3 lines of surrounding context to anchor the change. Do not
+     output unchanged methods or imports.
+
+4. **NEW FILES.** When a task requires a new file, output ONLY the complete file
+   contents within a single markdown code block with the relative file path
+   specified in the header comment or block tag.
+
+5. **NO PLACEHOLDERS.** Never use comments like `// rest of code unchanged`
+   inside your own generated snippets if it breaks AST parsing or unified diff
+   application.
+
+6. **DETERMINISTIC SYNTAX.** Do not speculate on uninstalled libraries or framework
+   APIs. Adhere strictly to the project's existing dependencies and language
+   version.

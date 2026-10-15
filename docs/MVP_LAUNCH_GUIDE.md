@@ -316,6 +316,14 @@ Example: `c88x7bp31cnnx2woh0c892ft-010619514887`
 
 ## 4. Coolify Resource Configuration
 
+> **Superseded for the backend (2026-10-13):** the backend is no longer a separate
+> API resource plus a separate MongoDB resource. It is one Docker Compose
+> resource — service `api` (port 8080, domain `api.evangelizae.com`) and service
+> `mongo` — both defined in `compose.yml`. Steps 3, 4.1, 4.2 and the hostname
+> table below only describe how the resources looked before that change; the
+> current procedure, the data migration and the backup schedule are in
+> `deploy/README.md`. Sections 4.3 onward (frontend) are unaffected.
+
 ### 4.1 MongoDB Resource
 
 **Type:** Docker resource  
@@ -745,6 +753,12 @@ curl -fsS https://api.evangelizae.com/api/v1/health
 curl -s -o /dev/null -w '%{http_code}' https://api.evangelizae.com/internal/v1/liturgy/import
 # Expected: 404 (blocked by Coolify proxy)
 ```
+
+> **Superseded (2026-10-13):** no proxy path rule blocks `/internal/*` during
+> beta, so this now returns `401` without the bearer token. The token
+> (`LITURGY_IMPORT_TOKEN`) is the sole guard — see the beta exception in
+> `AGENTS.md`. `/actuator/*` is off the routed port (`MANAGEMENT_PORT`, default
+> `9090`). `deploy/README.md` has the current verification block.
 
 ### Step 6: Create Frontend Resource in Coolify
 
