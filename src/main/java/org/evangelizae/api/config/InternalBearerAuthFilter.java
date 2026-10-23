@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.util.StringUtils;
+import org.springframework.web.util.HtmlUtils;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -92,7 +93,7 @@ public class InternalBearerAuthFilter extends OncePerRequestFilter {
                 HttpServletResponse.SC_UNAUTHORIZED == status ? "Unauthorized" : "Forbidden",
                 code,
                 message,
-                request.getRequestURI()
+                HtmlUtils.htmlEscape(request.getRequestURI(), "UTF-8")
         ));
     }
 }
