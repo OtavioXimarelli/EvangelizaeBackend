@@ -22,14 +22,15 @@ Health check: `http://localhost:3001/api/health`
 ./mvnw clean package
 ```
 
-## Layered architecture
+## Lean feature-first architecture
 
-Each feature is organized with explicit layers:
+Each feature is kept in a single package (for now), with only the classes needed:
 
-- `api/` → controllers and request contracts
-- `application/` → use-case services and orchestration
-- `domain/` → core models and repository ports
-- `infrastructure/` → adapters (currently in-memory boilerplate adapters)
+- Controllers + request/response contracts
+- Services + repositories
+- Models/enums
+
+Shared cross-feature concerns stay in `shared/`.
 
 Implemented feature modules:
 
@@ -37,6 +38,7 @@ Implemented feature modules:
 - `users`
 - `checkins`
 - `prayers`
+- `journal`
 
 ## Boilerplate endpoint surface (matching previous backend)
 
@@ -64,5 +66,9 @@ Implemented feature modules:
 - `POST /api/prayers/{id}/pray`
 - `POST /api/prayers/{id}/answered`
 - `DELETE /api/prayers/{id}`
+- `POST /api/journal/entries`
+- `GET /api/journal/entries`
+- `PUT /api/journal/entries/{id}`
+- `DELETE /api/journal/entries/{id}`
 
 > For this boilerplate phase, authenticated routes use header `X-User-Id` (defaults to `demo-user`).

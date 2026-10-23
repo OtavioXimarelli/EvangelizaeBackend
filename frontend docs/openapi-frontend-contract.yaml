@@ -1,0 +1,537 @@
+openapi: 3.0.3
+info:
+  title: Rosario Vivo Frontend Contract
+  version: 1.0.0
+  description: Contract-first API spec derived from current frontend integration points.
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+paths:
+  /auth/register:
+    post:
+      security: []
+      summary: Register user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+  /auth/login:
+    post:
+      security: []
+      summary: Login user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+  /checkins:
+    post:
+      summary: Create check-in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCheckInRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackendCheckIn'
+  /checkins/today:
+    get:
+      summary: Today check-in status
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hasCheckedIn:
+                    type: boolean
+                  checkIn:
+                    oneOf:
+                      - $ref: '#/components/schemas/BackendCheckIn'
+                      - type: 'null'
+                required: [hasCheckedIn]
+  /checkins/feed:
+    get:
+      security: []
+      summary: Public check-in feed
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, default: 10 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/BackendCheckIn' }
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [items, total, page, limit]
+  /checkins/my:
+    get:
+      summary: Own check-ins
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/BackendCheckIn' }
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [items, total, page, limit]
+  /checkins/stats:
+    get:
+      summary: Current user check-in stats
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckInStatsResponse'
+  /checkins/{id}/amen:
+    post:
+      summary: Toggle amen
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  amenCount:
+                    type: integer
+                required: [amenCount]
+  /checkins/{id}/comments:
+    post:
+      summary: Add comment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string, minLength: 1 }
+              required: [text]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackendCheckIn'
+  /users/me:
+    get:
+      summary: Get current profile
+      responses:
+        '200':
+          description: OK
+    put:
+      summary: Update current profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                avatarUrl: { type: string }
+                bio: { type: string }
+      responses:
+        '200':
+          description: OK
+  /users/me/stats:
+    get:
+      summary: Get current user stats
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackendStatsResponse'
+  /prayers:
+    post:
+      summary: Create prayer request
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrayerItem'
+    get:
+      security: []
+      summary: List prayer requests
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PrayerItem' }
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [items, total, page, limit]
+  /prayers/my:
+    get:
+      summary: List own prayer requests
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PrayerItem' }
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [items, total, page, limit]
+  /prayers/testimonials:
+    get:
+      security: []
+      summary: List answered testimonials
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PrayerItem' }
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [items, total, page, limit]
+  /prayers/{id}:
+    get:
+      security: []
+      summary: Get prayer request
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+    put:
+      summary: Update prayer request
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+    delete:
+      summary: Delete prayer request
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: No Content
+  /prayers/{id}/pray:
+    post:
+      summary: Toggle praying-for
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+  /prayers/{id}/answered:
+    post:
+      summary: Mark prayer as answered
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+  /journal/entries:
+    post:
+      summary: Create journal entry
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'
+    get:
+      summary: List journal entries
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/JournalEntry' }
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                required: [items, total, page, limit]
+  /journal/entries/{id}:
+    put:
+      summary: Update journal entry
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'
+    delete:
+      summary: Delete journal entry
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: No Content
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RegisterRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 6, maxLength: 100 }
+      required: [name, email, password]
+    LoginRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 6, maxLength: 100 }
+      required: [email, password]
+    AuthUser:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        currentStreak: { type: integer }
+        longestStreak: { type: integer }
+        totalCheckIns: { type: integer }
+      required: [id, name]
+    AuthResponse:
+      type: object
+      properties:
+        accessToken: { type: string }
+        user: { $ref: '#/components/schemas/AuthUser' }
+      required: [accessToken, user]
+    CreateCheckInRequest:
+      type: object
+      properties:
+        mystery:
+          type: string
+          enum:
+            - Mistérios Gozosos
+            - Mistérios Dolorosos
+            - Mistérios Gloriosos
+            - Mistérios Luminosos
+        reflection: { type: string, maxLength: 500 }
+        intentions:
+          type: array
+          items:
+            type: string
+        isPublic: { type: boolean }
+      required: [mystery]
+    BackendComment:
+      type: object
+      properties:
+        userId: { type: string }
+        userName: { type: string }
+        userAvatar: { type: string, nullable: true }
+        text: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [userId, userName, text, createdAt]
+    BackendCheckIn:
+      type: object
+      properties:
+        _id: { type: string }
+        userId: { type: string }
+        userName: { type: string }
+        userAvatar: { type: string, nullable: true }
+        mystery: { type: string }
+        reflection: { type: string, nullable: true }
+        intentions:
+          type: array
+          items: { type: string }
+        comments:
+          type: array
+          items: { $ref: '#/components/schemas/BackendComment' }
+        amenCount: { type: integer }
+        hasUserAmen: { type: boolean }
+        createdAt: { type: string, format: date-time }
+      required: [_id, userId, userName, mystery, createdAt]
+    BackendStatsResponse:
+      type: object
+      properties:
+        currentStreak: { type: integer }
+        longestStreak: { type: integer }
+        totalCheckIns: { type: integer }
+        lastCheckIn: { type: string, format: date-time, nullable: true }
+        favoriteMysteries:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: object
+                properties:
+                  mystery: { type: string }
+                  count: { type: integer }
+    CheckInStatsResponse:
+      type: object
+      properties:
+        totalCheckIns: { type: integer }
+        publicCheckIns: { type: integer }
+      required: [totalCheckIns, publicCheckIns]
+    PrayerItem:
+      type: object
+      properties:
+        _id: { type: string }
+        userId: { type: string }
+        userName: { type: string }
+        userAvatar: { type: string, nullable: true }
+        title: { type: string }
+        description: { type: string }
+        category: { type: string }
+        prayingForCount: { type: integer }
+        isUserPraying: { type: boolean }
+        isActive: { type: boolean }
+        isAnswered: { type: boolean }
+        answeredAt: { type: string, format: date-time, nullable: true }
+        testimonial: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+      required: [_id, userId, userName, title, description, category, createdAt]
+    JournalEntry:
+      type: object
+      properties:
+        id: { type: string }
+        date: { type: string, format: date-time }
+        content: { type: string }
+        mood: { type: string, nullable: true }
+        tags:
+          type: array
+          items: { type: string }
+        intentions: { type: string, nullable: true }
+        mystery: { type: string, nullable: true }
+      required: [id, date, content]

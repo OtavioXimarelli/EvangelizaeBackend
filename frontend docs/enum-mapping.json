@@ -1,0 +1,40 @@
+{
+  "mystery": {
+    "frontendToBackend": {
+      "joyful": "Mistérios Gozosos",
+      "sorrowful": "Mistérios Dolorosos",
+      "glorious": "Mistérios Gloriosos",
+      "luminous": "Mistérios Luminosos"
+    },
+    "backendToFrontend": {
+      "Mistérios Gozosos": "joyful",
+      "Mistérios Dolorosos": "sorrowful",
+      "Mistérios Gloriosos": "glorious",
+      "Mistérios Luminosos": "luminous"
+    }
+  },
+  "intentionTags": {
+    "frontendToBackend": {
+      "family": "Família",
+      "peace": "Paz",
+      "health": "Saúde",
+      "gratitude": "Pessoal",
+      "work": "Trabalho",
+      "faith": "Igreja",
+      "love": "Vocação",
+      "healing": "Conversão"
+    },
+    "backendToFrontend": {
+      "Família": "family",
+      "Paz": "peace",
+      "Saúde": "health",
+      "Trabalho": "work",
+      "Estudos": "faith",
+      "Vocação": "faith",
+      "Conversão": "healing",
+      "Igreja": "faith",
+      "Fiéis Defuntos": "peace",
+      "Pessoal": "gratitude"
+    }
+  }
+}

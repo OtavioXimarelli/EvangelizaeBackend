@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: backend-haveyouprayedtherosarytoday
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/rosary-app}
+
+server:
+  port: 3001
+  servlet:
+    context-path: /api
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+          - health
+          - info
+  endpoint:
+    health:
+      probes:
+        enabled: true
