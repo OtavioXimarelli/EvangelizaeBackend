@@ -15,6 +15,7 @@ import org.evangelizae.api.web.HealthController;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -47,6 +48,8 @@ class LiturgyControllerTest {
                         .queryParam("locale", "pt-BR"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("LITURGY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value(
+                        "A liturgia não está disponível para o dia de 2026-09-24"))
                 .andExpect(jsonPath("$.path").value("/api/v1/liturgy/today"));
     }
 
@@ -60,6 +63,19 @@ class LiturgyControllerTest {
                         .queryParam("locale", "en-US"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void returnsServiceUnavailableWhenStorageIsUnreachable() throws Exception {
+        when(liturgyService.getToday("America/Sao_Paulo", "pt-BR"))
+                .thenThrow(new DataAccessResourceFailureException("Timed out connecting to mongo:27017"));
+
+        mockMvc.perform(get("/api/v1/liturgy/today")
+                        .queryParam("timezone", "America/Sao_Paulo")
+                        .queryParam("locale", "pt-BR"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("STORAGE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value("Storage is temporarily unavailable"));
     }
 
     @Test

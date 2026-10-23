@@ -62,7 +62,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       PORT: 8080
-      MONGODB_URI: mongodb://${MONGO_APP_USERNAME}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_DATABASE:-evangelizae}?authSource=${MONGO_DATABASE:-evangelizae}
+      MONGODB_URI: mongodb://${MONGO_APP_USERNAME:-evangelizae}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_DATABASE:-evangelizae}?authSource=${MONGO_DATABASE:-evangelizae}
       MONGO_DATABASE: ${MONGO_DATABASE:-evangelizae}
       # Not routed by the proxy, so /actuator/* stays off the public surface.
       MANAGEMENT_PORT: ${MANAGEMENT_PORT:-9090}
