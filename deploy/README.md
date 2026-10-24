@@ -25,6 +25,14 @@ Create the resource: New → Application → Docker Compose.
 - **Docker compose file location:** `/compose.yml`
 - **Service:** `api` — **Port:** `8080`
 - **Domains:** `api.evangelizae.com` (Coolify proxy + automatic TLS)
+
+**Do not create a Dockerfile/Docker Image resource.** `Dockerfile` only builds the
+API image; `compose.yml` starts both `api` and `mongo` and constructs the API's
+`MONGODB_URI`. If logs say `Dockerfile or Docker Image based deployment detected`,
+Coolify is using the wrong resource type. Changing environment variables cannot
+make that resource start the Compose `mongo` service. Configure it as a Docker
+Compose resource with the file path above.
+
 - **Environment variables** (same names as `.env.example`, set in the Coolify UI,
   never committed):
 
@@ -47,6 +55,11 @@ docker compose ps          # mongo healthy, api up
 docker compose logs api | grep -i 'started\|mongo'
 curl -fsS https://api.evangelizae.com/api/v1/health   # from your machine
 ```
+
+`mongo-setup` runs after Mongo is healthy and creates or updates the API's
+least-privileged user. It also repairs an initialized volume where the original
+first-start init script did not create that user. Confirm `mongo-setup` exits
+successfully before expecting the API to start.
 
 ## Migrating from the old standalone Mongo resource
 

@@ -1,5 +1,5 @@
-// Runs once, on the first start of an empty /data/db volume.
-// Creates the least-privileged application user. The API never connects as root.
+// Runs during first-time Mongo initialization and from the mongo-setup service.
+// Keeps the least-privileged API user in sync; the API never connects as root.
 const database = process.env.MONGO_INITDB_DATABASE || 'evangelizae';
 const user = process.env.MONGO_APP_USERNAME;
 const password = process.env.MONGO_APP_PASSWORD;
@@ -10,11 +10,15 @@ if (!user || !password) {
 
 const appDatabase = db.getSiblingDB(database);
 
-if (!appDatabase.getUser(user)) {
+const roles = [{ role: 'readWrite', db: database }];
+if (appDatabase.getUser(user)) {
+  appDatabase.updateUser(user, { pwd: password, roles });
+  print(`updated readWrite user "${user}" on database "${database}"`);
+} else {
   appDatabase.createUser({
     user: user,
     pwd: password,
-    roles: [{ role: 'readWrite', db: database }],
+    roles,
   });
   print(`created readWrite user "${user}" on database "${database}"`);
 }
