@@ -56,10 +56,9 @@ docker compose logs api | grep -i 'started\|mongo'
 curl -fsS https://api.evangelizae.com/api/v1/health   # from your machine
 ```
 
-`mongo-setup` runs after Mongo is healthy and creates or updates the API's
-least-privileged user. It also repairs an initialized volume where the original
-first-start init script did not create that user. Confirm `mongo-setup` exits
-successfully before expecting the API to start.
+`mongo-setup` runs inline after Mongo is healthy and creates or updates the API's
+least-privileged user, including on existing volumes. Confirm `mongo-setup`
+exits successfully before expecting the API to start.
 
 ## Migrating from the old standalone Mongo resource
 

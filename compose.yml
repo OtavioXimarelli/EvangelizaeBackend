@@ -36,11 +36,8 @@ services:
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-evangelizae}
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?set MONGO_ROOT_USERNAME in .env}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set MONGO_ROOT_PASSWORD in .env}  # rotate regularly; never commit real values
-      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-evangelizae}
-      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}  # rotate regularly; never commit real values
     volumes:
       - mongo_data:/data/db
-      - ./deploy/mongo-init.js:/docker-entrypoint-initdb.d/10-app-user.js:ro
     networks:
       - data
     healthcheck:
@@ -62,18 +59,31 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set MONGO_ROOT_PASSWORD in .env}
       MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-evangelizae}
       MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}
-    volumes:
-      - ./deploy/mongo-init.js:/docker-entrypoint-initdb.d/10-app-user.js:ro
     networks:
       - data
     entrypoint: ["/bin/sh", "-ec"]
     command:
-      - >-
-        mongosh --quiet --host mongo
-        --username "$$MONGO_INITDB_ROOT_USERNAME"
-        --password "$$MONGO_INITDB_ROOT_PASSWORD"
-        --authenticationDatabase admin
-        --file /docker-entrypoint-initdb.d/10-app-user.js
+      - |-
+        mongosh --quiet --host mongo \
+          --username "$$MONGO_INITDB_ROOT_USERNAME" \
+          --password "$$MONGO_INITDB_ROOT_PASSWORD" \
+          --authenticationDatabase admin <<'MONGO_SETUP'
+        const database = process.env.MONGO_INITDB_DATABASE || "evangelizae";
+        const user = process.env.MONGO_APP_USERNAME;
+        const password = process.env.MONGO_APP_PASSWORD;
+        if (!user || !password) {
+          throw new Error("MONGO_APP_USERNAME and MONGO_APP_PASSWORD must be set");
+        }
+        const appDatabase = db.getSiblingDB(database);
+        const roles = [{ role: "readWrite", db: database }];
+        if (appDatabase.getUser(user)) {
+          appDatabase.updateUser(user, { pwd: password, roles });
+          print("updated readWrite user \"" + user + "\" on database \"" + database + "\"");
+        } else {
+          appDatabase.createUser({ user, pwd: password, roles });
+          print("created readWrite user \"" + user + "\" on database \"" + database + "\"");
+        }
+        MONGO_SETUP
 
   api:
     build:
