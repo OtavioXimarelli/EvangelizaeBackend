@@ -67,11 +67,12 @@ services:
     networks:
       - data
     entrypoint: ["/bin/sh", "-ec"]
-    command: |
-      mongosh --quiet --host mongo \
-        --username "$$MONGO_INITDB_ROOT_USERNAME" \
-        --password "$$MONGO_INITDB_ROOT_PASSWORD" \
-        --authenticationDatabase admin \
+    command:
+      - >-
+        mongosh --quiet --host mongo
+        --username "$$MONGO_INITDB_ROOT_USERNAME"
+        --password "$$MONGO_INITDB_ROOT_PASSWORD"
+        --authenticationDatabase admin
         --file /docker-entrypoint-initdb.d/10-app-user.js
 
   api:
