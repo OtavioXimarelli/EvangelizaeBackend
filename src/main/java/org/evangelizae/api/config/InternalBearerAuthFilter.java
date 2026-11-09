@@ -31,16 +31,23 @@ public class InternalBearerAuthFilter extends OncePerRequestFilter {
     private final String expectedToken;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final java.util.List<String> allowedOrigins;
 
     public InternalBearerAuthFilter(AppProperties properties, ObjectMapper objectMapper, Clock clock) {
         this.expectedToken = properties.liturgy().importConfig().token();
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.allowedOrigins = properties.cors().allowedOrigins();
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith(INTERNAL_PATH);
+        // CORS preflight (OPTIONS) carries no Authorization header by design.
+        // Skipping auth for it lets Spring MVC CORS handling answer the
+        // preflight with Access-Control-Allow-* headers; the actual request
+        // (GET/PUT/DELETE) still requires the bearer token.
+        return !request.getRequestURI().startsWith(INTERNAL_PATH)
+                || "OPTIONS".equalsIgnoreCase(request.getMethod());
     }
 
     @Override
@@ -85,6 +92,14 @@ public class InternalBearerAuthFilter extends OncePerRequestFilter {
             String code,
             String message
     ) throws IOException {
+        // This filter runs before Spring Security's CorsFilter, so error
+        // responses would otherwise lack Access-Control-Allow-Origin and the
+        // browser would mask the 401/403 as a CORS failure.
+        var origin = request.getHeader("Origin");
+        if (origin != null && allowedOrigins.contains(origin)) {
+            response.setHeader("Access-Control-Allow-Origin", origin);
+            response.setHeader("Vary", "Origin");
+        }
         response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         objectMapper.writeValue(response.getOutputStream(), new ApiError(

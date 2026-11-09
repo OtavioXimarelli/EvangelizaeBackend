@@ -17,7 +17,7 @@ public class ApiConfiguration {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
-                registry.addMapping("/**")
+                registry.addMapping("/api/**")
                         .allowedOrigins(properties.cors().allowedOrigins().toArray(String[]::new))
                         .allowedMethods("GET", "OPTIONS")
                         .allowedHeaders("Accept", "Content-Type")
