@@ -22,6 +22,11 @@ public class ApiConfiguration {
                         .allowedMethods("GET", "OPTIONS")
                         .allowedHeaders("Accept", "Content-Type")
                         .maxAge(3600);
+                registry.addMapping("/internal/**")
+                        .allowedOrigins(properties.cors().allowedOrigins().toArray(String[]::new))
+                        .allowedMethods("GET", "PUT", "DELETE", "OPTIONS")
+                        .allowedHeaders("Accept", "Content-Type", "Authorization")
+                        .maxAge(3600);
             }
         };
     }

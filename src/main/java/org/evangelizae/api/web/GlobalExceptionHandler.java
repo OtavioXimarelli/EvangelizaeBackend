@@ -7,6 +7,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.evangelizae.api.liturgy.service.InvalidLiturgyImportException;
 import org.evangelizae.api.liturgy.service.InvalidLiturgyRequestException;
 import org.evangelizae.api.liturgy.service.LiturgyUnavailableException;
+import org.evangelizae.api.reflection.service.InvalidReflectionContentException;
+import org.evangelizae.api.reflection.service.InvalidReflectionRequestException;
+import org.evangelizae.api.reflection.service.ReflectionNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -57,6 +60,27 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiError> handleInvalidImport(InvalidLiturgyImportException exception,
             HttpServletRequest request) {
         return error(HttpStatus.UNPROCESSABLE_CONTENT, "INVALID_LITURGY_IMPORT",
+                exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidReflectionRequestException.class)
+    ResponseEntity<ApiError> handleInvalidReflectionRequest(InvalidReflectionRequestException exception,
+            HttpServletRequest request) {
+        return error(HttpStatus.BAD_REQUEST, "REFLECTION_INVALID_RANGE",
+                exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidReflectionContentException.class)
+    ResponseEntity<ApiError> handleInvalidReflection(InvalidReflectionContentException exception,
+            HttpServletRequest request) {
+        return error(HttpStatus.UNPROCESSABLE_CONTENT, "REFLECTION_INVALID",
+                exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(ReflectionNotFoundException.class)
+    ResponseEntity<ApiError> handleReflectionNotFound(ReflectionNotFoundException exception,
+            HttpServletRequest request) {
+        return error(HttpStatus.NOT_FOUND, "REFLECTION_NOT_FOUND",
                 exception.getMessage(), request);
     }
 

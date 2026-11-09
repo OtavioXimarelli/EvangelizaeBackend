@@ -33,13 +33,18 @@ import org.evangelizae.api.liturgy.model.LiturgyImportResponse;
 import org.evangelizae.api.liturgy.model.ReadingKind;
 import org.evangelizae.api.liturgy.repository.LiturgicalDayDocument;
 import org.evangelizae.api.liturgy.repository.LiturgicalDayRepository;
+import org.evangelizae.api.reflection.repository.DailyReflectionDocument;
+import org.evangelizae.api.reflection.repository.DailyReflectionRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class LiturgyServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-09-24T02:00:00Z");
@@ -47,6 +52,9 @@ class LiturgyServiceTest {
 
     @Mock
     private LiturgicalDayRepository repository;
+
+    @Mock
+    private DailyReflectionRepository reflectionRepository;
 
     @Test
     void returnsGroupedLiturgyForTheObserverDate() {
@@ -179,8 +187,39 @@ class LiturgyServiceTest {
                 .hasMessage("locale must be pt-BR");
     }
 
+    @Test
+    void mergesAStoredReflectionAndOmitsItWhenAbsent() {
+        var document = document(
+                LocalDate.parse("2026-09-23"),
+                List.of(persistedReading("FIRST_READING", "Primeira leitura")),
+                Instant.parse("2026-09-24T01:30:00Z")
+        );
+        when(repository.findByDate(LocalDate.parse("2026-09-23"))).thenReturn(Optional.of(document));
+        var liturgyService = new LiturgyService(repository, reflectionRepository,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        when(reflectionRepository.findByDate(LocalDate.parse("2026-09-23"))).thenReturn(Optional.empty());
+        var absent = liturgyService.getToday("America/Sao_Paulo", "pt-BR");
+        assertThat(absent.reflection()).isNull();
+
+        when(reflectionRepository.findByDate(LocalDate.parse("2026-09-23")))
+                .thenReturn(Optional.of(new DailyReflectionDocument(
+                        "2026-09-23",
+                        LocalDate.parse("2026-09-23"),
+                        "Texto da reflexão",
+                        "Autor",
+                        "Mt 25,1-13",
+                        NOW.minusSeconds(3600),
+                        NOW)));
+        var merged = liturgyService.getToday("America/Sao_Paulo", "pt-BR");
+        assertThat(merged.reflection().text()).isEqualTo("Texto da reflexão");
+        assertThat(merged.reflection().attribution()).isEqualTo("Autor");
+        assertThat(merged.reflection().reference()).isEqualTo("Mt 25,1-13");
+    }
+
     private LiturgyService service() {
-        return new LiturgyService(repository, Clock.fixed(NOW, ZoneOffset.UTC));
+        when(reflectionRepository.findByDate(any())).thenReturn(Optional.empty());
+        return new LiturgyService(repository, reflectionRepository, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static LiturgyImportRequest request(LiturgicalDay... days) {

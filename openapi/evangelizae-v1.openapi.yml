@@ -74,6 +74,111 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ApiError'}
+  /internal/v1/reflections:
+    servers:
+      - url: http://localhost:8080
+    get:
+      operationId: listReflections
+      summary: List reflections in a date range (admin UI).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: to
+          in: query
+          required: true
+          schema: {type: string, format: date}
+      responses:
+        '200':
+          description: Reflections in range, ordered by date.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReflectionsListResponse'}
+        '400':
+          description: Invalid range (from > to, or span > 62 days).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+        '401':
+          description: Missing/malformed bearer token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+        '403':
+          description: Invalid bearer token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+  /internal/v1/reflections/{date}:
+    servers:
+      - url: http://localhost:8080
+    put:
+      operationId: upsertReflection
+      summary: Create or replace the reflection for a date (idempotent).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema: {type: string, format: date}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReflectionUpsertRequest'}
+      responses:
+        '200':
+          description: Saved (created or updated).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DailyReflection'}
+        '401':
+          description: Missing/malformed bearer token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+        '403':
+          description: Invalid bearer token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+        '422':
+          description: Blank text/attribution or invalid payload.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+    delete:
+      operationId: deleteReflection
+      summary: Delete the reflection for a date.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema: {type: string, format: date}
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          description: No reflection for that date.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+        '401':
+          description: Missing/malformed bearer token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+        '403':
+          description: Invalid bearer token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
 components:
   securitySchemes:
     bearerAuth:
@@ -119,6 +224,39 @@ components:
             provider: {type: string}
             fetchedAt: {type: string, format: date-time}
             freshness: {type: string, enum: [LIVE, CACHED]}
+        reflection:
+          $ref: '#/components/schemas/LiturgyReflection'
+    LiturgyReflection:
+      type: object
+      required: [text, attribution]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 20000}
+        attribution: {type: string, minLength: 1, maxLength: 300}
+        reference: {type: string, maxLength: 120}
+    DailyReflection:
+      type: object
+      required: [date, text, attribution, updatedAt]
+      properties:
+        date: {type: string, format: date}
+        text: {type: string}
+        attribution: {type: string}
+        reference: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ReflectionsListResponse:
+      type: object
+      required: [reflections]
+      properties:
+        reflections:
+          type: array
+          items: {$ref: '#/components/schemas/DailyReflection'}
+    ReflectionUpsertRequest:
+      type: object
+      required: [text, attribution]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 20000}
+        attribution: {type: string, minLength: 1, maxLength: 300}
+        reference: {type: string, maxLength: 120}
     LiturgyImportRequest:
       type: object
       required: [schemaVersion, scrapedAt, period, days]

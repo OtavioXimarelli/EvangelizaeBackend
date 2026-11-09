@@ -28,10 +28,12 @@ import org.evangelizae.api.liturgy.model.LiturgyImportRequest.SourceRole;
 import org.evangelizae.api.liturgy.model.LiturgyImportResponse;
 import org.evangelizae.api.liturgy.model.LiturgyPrayers;
 import org.evangelizae.api.liturgy.model.LiturgyReading;
+import org.evangelizae.api.liturgy.model.LiturgyReflection;
 import org.evangelizae.api.liturgy.model.LiturgySource;
 import org.evangelizae.api.liturgy.model.ReadingKind;
 import org.evangelizae.api.liturgy.repository.LiturgicalDayDocument;
 import org.evangelizae.api.liturgy.repository.LiturgicalDayRepository;
+import org.evangelizae.api.reflection.repository.DailyReflectionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -44,10 +46,13 @@ public class LiturgyService {
     private static final Pattern HASH_PATTERN = Pattern.compile("^sha256:[0-9a-f]{64}$");
 
     private final LiturgicalDayRepository repository;
+    private final DailyReflectionRepository reflectionRepository;
     private final Clock clock;
 
-    public LiturgyService(LiturgicalDayRepository repository, Clock clock) {
+    public LiturgyService(LiturgicalDayRepository repository,
+            DailyReflectionRepository reflectionRepository, Clock clock) {
         this.repository = repository;
+        this.reflectionRepository = reflectionRepository;
         this.clock = clock;
     }
 
@@ -281,6 +286,10 @@ public class LiturgyService {
                     "Liturgy for " + document.date() + " does not declare its source");
         }
 
+        var reflection = reflectionRepository.findByDate(document.date())
+                .map(r -> new LiturgyReflection(r.text(), r.attribution(), r.reference()))
+                .orElse(null);
+
         return new DailyLiturgy(
                 document.date(),
                 document.title(),
@@ -290,7 +299,8 @@ public class LiturgyService {
                 new LiturgySource(
                         document.provider(),
                         fetchedAt,
-                        LiturgySource.Freshness.LIVE)
+                        LiturgySource.Freshness.LIVE),
+                reflection
         );
     }
 

@@ -7,7 +7,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 
+import org.evangelizae.api.liturgy.model.DailyLiturgy;
+import org.evangelizae.api.liturgy.model.LiturgicalColor;
+import org.evangelizae.api.liturgy.model.LiturgyGroup;
+import org.evangelizae.api.liturgy.model.LiturgyPrayers;
+import org.evangelizae.api.liturgy.model.LiturgyReading;
+import org.evangelizae.api.liturgy.model.LiturgySource;
+import org.evangelizae.api.liturgy.model.ReadingKind;
 import org.evangelizae.api.liturgy.service.InvalidLiturgyRequestException;
 import org.evangelizae.api.liturgy.service.LiturgyService;
 import org.evangelizae.api.liturgy.service.LiturgyUnavailableException;
@@ -89,6 +98,26 @@ class LiturgyControllerTest {
     void actuatorIsNotExposedUnderApiPrefix() throws Exception {
         mockMvc.perform(get("/api/v1/actuator/health"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void omitsReflectionWhenAbsent() throws Exception {
+        when(liturgyService.getToday("America/Sao_Paulo", "pt-BR")).thenReturn(new DailyLiturgy(
+                LocalDate.parse("2026-09-24"),
+                "Quarta-feira",
+                LiturgicalColor.GREEN,
+                new LiturgyPrayers(null, null, null),
+                List.of(new LiturgyGroup(ReadingKind.GOSPEL,
+                        List.of(new LiturgyReading("Evangelho", "Mt 11,11-15", "Texto", null)))),
+                new LiturgySource("CNBB", Instant.parse("2026-09-24T01:00:00Z"), LiturgySource.Freshness.LIVE),
+                null
+        ));
+
+        mockMvc.perform(get("/api/v1/liturgy/today")
+                        .queryParam("timezone", "America/Sao_Paulo")
+                        .queryParam("locale", "pt-BR"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reflection").doesNotExist());
     }
 }
 
