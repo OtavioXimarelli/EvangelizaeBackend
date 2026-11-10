@@ -5,12 +5,19 @@ RUN mvn -B -ntp dependency:go-offline
 COPY src ./src
 RUN mvn -B -ntp clean package
 
-FROM eclipse-temurin:25-jre
+# Pinned to the `-noble` (Ubuntu 24.04 LTS) variant, not the floating `25-jre`
+# tag. Unpinned `25-jre` currently tracks Ubuntu 26.04 "resolute", a development
+# release whose archive.ubuntu.com security/updates suites are only partially
+# mirrored, so the `apt-get` below retries against `Ign:` hosts and the runtime
+# image build stalls (the maven layers are all CACHED, so this apt step is the
+# one that runs fresh and hangs). Same JVM, stable mirror.
+FROM eclipse-temurin:25-jre-noble
 
 # The JRE image ships no HTTP client, and the runtime healthcheck needs one.
 # curl is also what makes a failing container debuggable from the VPS host.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends curl \
+# Retries/timeout keep a transient mirror blip from hanging the build.
+RUN apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 update \
+ && apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 install -y --no-install-recommends curl \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --create-home --home-dir /home/evangelizae evangelizae
 
